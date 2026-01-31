@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  overflow: hidden;
+  --app-font-family: system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background-color: transparent;
+  user-select: none;
+  cursor: default;
+}
+
+/* 强制应用字体 */
+* {
+  font-family: var(--app-font-family) !important;
+}
+
+/* 修复 Chrome/WebView 中输入框自动填充背景变黄/变白的问题 */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active{
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: inherit;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
+/* 滚动条适配 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  /* 滚动条颜色也用变量或者 rgba 适配 */
+  background-color: rgba(128, 128, 128, 0.2); 
+  border-radius: 10px;
+}
+.light .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.1); /* 浅色模式下滚动条更黑一点 */
+}

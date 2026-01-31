@@ -1,0 +1,37 @@
+[package]
+name = "MacGal"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "macgal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["wry", "common-controls-v6"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+# 数据库 (本地存储游戏元数据)
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite"] }
+# 网络请求 (刮削 VNDB 数据)
+reqwest = { version = "0.11", features = ["json"] }
+# 窗口磨砂效果
+window-vibrancy = "0.5"
+# 路径处理
+dirs = "5.0"
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+font-kit = "0.14.3"
