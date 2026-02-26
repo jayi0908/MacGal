@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { Layout } from "./components/Layout";
 import { LaunchControl } from "./components/LaunchControl";
 import { InstancesPage, GameInstance } from "./components/InstancesPage";
-import { SettingsPage } from "./components/SettingsPage"; // 引入设置页
+import { DiscoveryPage } from "./components/DiscoveryPage";
+import { SettingsPage } from "./components/SettingsPage";
 import { invoke } from "@tauri-apps/api/core";
 import { ToastProvider, useToast } from "./components/ToastProvider";
 import { useTheme, ThemeProvider } from "./contexts/ThemeContext";
@@ -11,7 +12,7 @@ import { listen } from "@tauri-apps/api/event";
 const INITIAL_INSTANCES: GameInstance[] = [];
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<"home" | "instances" | "settings">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "instances" | "discovery" | "settings">("home");
   const [instances, setInstances] = useState<GameInstance[]>([]);
   const { config } = useTheme();
   const { showToast } = useToast();
@@ -169,8 +170,11 @@ function AppContent() {
           onLaunch={handleLaunch} 
         />
       )}
+
+      {/* 发现页 */}
+      {activeTab === 'discovery' && <DiscoveryPage />}
       
-      {/* 设置页 (已实装) */}
+      {/* 设置页 */}
       {activeTab === "settings" && (
         <SettingsPage />
       )}

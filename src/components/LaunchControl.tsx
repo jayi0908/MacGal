@@ -105,7 +105,7 @@ export function LaunchControl({ instances, onLaunch, onGoToSettings }: LaunchCon
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute bottom-full mb-3 w-72 bg-[#1e1e2e]/90 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl z-40"
+                  className="absolute bottom-full right-0 mb-3 w-64 bg-[#1e1e2e]/90 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl z-40"
                 >
                    <div className="max-h-[200px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
                     {instances.map((instance) => (

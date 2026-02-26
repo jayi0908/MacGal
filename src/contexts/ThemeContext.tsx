@@ -5,14 +5,15 @@ export type ThemeMode = "light" | "dark" | "system";
 export interface AppConfig {
   // --- 外观 ---
   theme: ThemeMode;
-  fontFamily: string; // 改为 string 以支持任意字体名
-  fontSize: number;   // 0.8 ~ 1.2
+  fontFamily: string;
+  fontSize: number;
   customBgImage: string;
   useInstanceBg: boolean;
   
   // --- 全局游戏设置 ---
   crossoverPath: string; // CrossOver.app 路径
   bottlesPath: string;   // 容器库路径
+  enableDiscovery: boolean; // 搜索/发现功能开关
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -23,12 +24,13 @@ const DEFAULT_CONFIG: AppConfig = {
   useInstanceBg: true,
   crossoverPath: "/Applications/CrossOver.app",
   bottlesPath: "~/Library/Application Support/CrossOver/Bottles",
+  enableDiscovery: true,
 };
 
 interface ThemeContextType {
   config: AppConfig;
   updateConfig: (newConfig: Partial<AppConfig>) => void;
-  currentTheme: "light" | "dark"; // 导出当前实际计算出的主题（解析 System 后）
+  currentTheme: "light" | "dark";
 }
 
 const ThemeContext = createContext<ThemeContextType | null>(null);

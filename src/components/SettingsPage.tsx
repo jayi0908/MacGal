@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useTheme, ThemeMode } from "../contexts/ThemeContext";
-import { Monitor, Sun, Moon, Type, Image as ImageIcon, FolderOpen, Layout, Cog, Info, Github } from "lucide-react";
+import { Monitor, Sun, Moon, Type, Image as ImageIcon, FolderOpen, Layout, Cog, Info, Github, Sliders, Search } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { clsx } from "clsx";
 
-type SettingTab = "global" | "appearance" | "about";
+type SettingTab = "general" | "global" | "appearance" | "about";
 
 export function SettingsPage() {
   const { config, updateConfig, currentTheme } = useTheme();
@@ -80,6 +80,7 @@ export function SettingsPage() {
         <h2 className={clsx("text-xl font-bold mb-4 px-2", isDark ? "text-white" : "text-gray-800")}>
           设置
         </h2>
+        <SidebarItem active={activeTab === 'general'} icon={<Sliders size={18}/>} label="通用" onClick={() => setActiveTab('general')} isDark={isDark} />
         <SidebarItem active={activeTab === 'global'} icon={<Cog size={18}/>} label="全局游戏设置" onClick={() => setActiveTab('global')} isDark={isDark} />
         <SidebarItem active={activeTab === 'appearance'} icon={<Layout size={18}/>} label="外观" onClick={() => setActiveTab('appearance')} isDark={isDark} />
         <SidebarItem active={activeTab === 'about'} icon={<Info size={18}/>} label="关于" onClick={() => setActiveTab('about')} isDark={isDark} />
@@ -87,6 +88,46 @@ export function SettingsPage() {
 
       {/* 右侧内容 */}
       <div className="flex-1 h-full overflow-y-auto custom-scrollbar pb-20 pr-4">
+
+        {/* 通用设置 */}
+        {activeTab === 'general' && (
+           <div className="space-y-6 max-w-3xl">
+             <h1 className={headingClass}>通用</h1>
+             <div className={cardClass}>
+                <h3 className={subHeadingClass}><Search size={20} /> 搜索/发现</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className={clsx("font-medium", isDark ? "text-white" : "text-gray-900")}>
+                        {config.enableDiscovery ? "模式: 发现页" : "模式: 搜索框"}
+                      </div>
+                      <div className={clsx("text-sm mt-1", isDark ? "text-white/50" : "text-gray-500")}>
+                        {config.enableDiscovery 
+                            ? "导航栏显示「发现」按钮，点击查看推荐文章。" 
+                            : "导航栏显示「搜索」按钮，点击弹出搜索框。"}
+                        <br/>
+                        <span className="opacity-70">通过 Command+S 可唤起搜索</span>
+                      </div>
+                    </div>
+                        
+                    {/* 开关 */}
+                    <button 
+                      onClick={() => updateConfig({ enableDiscovery: !config.enableDiscovery })}
+                      className={clsx(
+                        "w-12 h-6 rounded-full transition-colors relative flex-shrink-0", 
+                        config.enableDiscovery ? "bg-indigo-600" : (isDark ? "bg-gray-700" : "bg-gray-300")
+                      )}
+                    >
+                      <div className={clsx(
+                        "w-4 h-4 bg-white rounded-full absolute top-1 transition-all shadow-sm", 
+                        config.enableDiscovery ? "left-7" : "left-1"
+                      )} />
+                    </button>
+                  </div>
+                </div>
+             </div>
+           </div>
+        )}
         
         {/* 全局设置 */}
         {activeTab === 'global' && (
