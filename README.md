@@ -12,7 +12,13 @@ MacGal 是一款专为 macOS 设计的 galgame/视觉小说管理器，主要管
 
 ### 从 Releases 下载
 
-前往 [Releases](https://github.com/jayi0908/MacGal/releases) 页面下载最新版本的安装包。
+前往 [Releases](https://github.com/jayi0908/MacGal/releases) 页面下载最新版本的安装包。将程序拖拽入 Applications 之后需要在终端中运行如下命令绕过隔离：
+
+```bash
+xattr -cr /Applications/MacGal.app
+```
+
+之后就能正常启动了。
 
 ### 从源码编译
 
