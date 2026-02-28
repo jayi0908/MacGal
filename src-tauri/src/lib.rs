@@ -1,6 +1,7 @@
 use tauri::{command, Manager};
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 use font_kit::source::SystemSource;
+use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -39,6 +40,12 @@ struct TouchGalRequestBody {
     sortOrder: String,
     selectedYears: Vec<String>,
     selectedMonths: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct GameDirInfo {
+    dir_name: String,
+    executables: Vec<String>,
 }
 
 #[command]
@@ -231,6 +238,92 @@ async fn search_game(keyword: String, source: String) -> Result<Vec<SearchResult
     Ok(results)
 }
 
+#[command]
+fn get_directory_keywords(path: String) -> Result<Vec<String>, String> {
+    let path_buf = std::path::PathBuf::from(&path);
+    let mut keywords = Vec::new();
+
+    // 提取上层目录名
+    if let Some(parent) = path_buf.parent() {
+        if let Some(dir_name) = parent.file_name() {
+            keywords.push(dir_name.to_string_lossy().into_owned());
+        }
+
+        // 遍历目录下所有 .exe 文件
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_file() {
+                        let file_path = entry.path();
+                        if file_path.extension().and_then(|e| e.to_str()) == Some("exe") {
+                            if let Some(stem) = file_path.file_stem() {
+                                keywords.push(stem.to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 排序并去重
+    keywords.sort();
+    keywords.dedup();
+    Ok(keywords)
+}
+
+// 辅助递归函数，寻找目录下所有的 .exe 文件，限制深度防止死循环
+fn find_exes(dir: &Path, exes: &mut Vec<String>, depth: usize) {
+    if depth > 5 { return; } // 最大递归深度限制为 5 层
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(ft) = entry.file_type() {
+                if ft.is_file() {
+                    let p = entry.path();
+                    if p.extension().and_then(|ext| ext.to_str()) == Some("exe") {
+                        exes.push(p.to_string_lossy().into_owned());
+                    }
+                } else if ft.is_dir() {
+                    find_exes(&entry.path(), exes, depth + 1);
+                }
+            }
+        }
+    }
+}
+
+// 扫描指定的根目录，提取包含 .exe 的一级子目录
+#[command]
+fn scan_game_directories(path: String) -> Result<Vec<GameDirInfo>, String> {
+    let mut results = Vec::new();
+    let root_path = PathBuf::from(&path);
+
+    if !root_path.is_dir() {
+        return Err("Selected path is not a directory".into());
+    }
+
+    let entries = std::fs::read_dir(root_path).map_err(|e| e.to_string())?;
+
+    for entry in entries.flatten() {
+        if let Ok(ft) = entry.file_type() {
+            if ft.is_dir() {
+                let dir_name = entry.file_name().to_string_lossy().into_owned();
+                let mut executables = Vec::new();
+                
+                find_exes(&entry.path(), &mut executables, 0);
+
+                if !executables.is_empty() {
+                    results.push(GameDirInfo {
+                        dir_name,
+                        executables,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -246,7 +339,9 @@ pub fn run() {
             get_home_dir,
             get_system_fonts,
             fetch_ymgal_news,
-            search_game
+            search_game,
+            get_directory_keywords,
+            scan_game_directories
         ])
         .setup(|app| {
             // 获取主窗口

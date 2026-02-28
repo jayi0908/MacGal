@@ -14,6 +14,7 @@ export interface AppConfig {
   crossoverPath: string; // CrossOver.app 路径
   bottlesPath: string;   // 容器库路径
   enableDiscovery: boolean; // 搜索/发现功能开关
+  defaultBottle: string;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -25,6 +26,7 @@ const DEFAULT_CONFIG: AppConfig = {
   crossoverPath: "/Applications/CrossOver.app",
   bottlesPath: "~/Library/Application Support/CrossOver/Bottles",
   enableDiscovery: true,
+  defaultBottle: "Default",
 };
 
 interface ThemeContextType {
