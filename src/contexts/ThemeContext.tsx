@@ -15,6 +15,8 @@ export interface AppConfig {
   bottlesPath: string;   // 容器库路径
   enableDiscovery: boolean; // 搜索/发现功能开关
   defaultBottle: string;
+  pdPath: string; // PD 虚拟机本地路径
+  defaultPdVm: string;  // 默认虚拟机 Applications 目录名称
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -27,6 +29,8 @@ const DEFAULT_CONFIG: AppConfig = {
   bottlesPath: "~/Library/Application Support/CrossOver/Bottles",
   enableDiscovery: true,
   defaultBottle: "Default",
+  pdPath: "~/Applications (Parallels)",
+  defaultPdVm: "",
 };
 
 interface ThemeContextType {

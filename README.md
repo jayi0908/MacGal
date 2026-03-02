@@ -4,7 +4,7 @@
 >
 > 我有个叔叔买 mac 打游戏。”
 
-MacGal 是一款专为 macOS 设计的 galgame/视觉小说管理器，主要管理通过 CrossOver 运行的游戏实例，旨在补全 galgame 管理器在 macOS 平台的空白。
+MacGal 是一款专为 macOS 设计的 galgame/视觉小说管理器，主要管理通过 CrossOver 与 Parallels Desktop 运行的游戏实例，旨在补全 galgame 管理器在 macOS 平台的空白。
 
 目前更新至 0.2.0 版本，实现了添加实例、批量导入游戏与启动游戏的基本功能，支持基本的搜索功能，数据来源为 [touchgal](https://touchgal.top) 和 [kungal](https://kungal.com)，未来会持续完善。
 

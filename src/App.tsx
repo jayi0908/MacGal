@@ -113,9 +113,10 @@ function AppContent() {
       const response = await invoke("launch_game", {
         instanceId: instance.id,
         config: {
-          bottle_path: `${config.bottlesPath}/${instance.bottleName}`,
+          bottle_path: instance.runMode === 'parallels' ? `${config.pdPath}/${instance.bottleName}` : `${config.bottlesPath}/${instance.bottleName}`,
           game_exe: instance.executablePath,
-          crossover_app_path: config.crossoverPath
+          crossover_app_path: config.crossoverPath,
+          run_mode: instance.runMode || 'crossover'
         }
       });
       showToast(`${instance.name} 启动成功 (PID: ${response})`, "success");

@@ -17,6 +17,7 @@ export interface GameInstance {
   lastPlayed?: number;
   totalPlayTime?: number;
   playHistory?: Record<string, number>;
+  runMode?: 'crossover' | 'parallels';
 }
 
 interface SearchResult {
@@ -33,6 +34,7 @@ interface BatchItem {
   dirName: string;
   executables: string[];
   selectedExec: string;
+  runMode: 'crossover' | 'parallels';
   bottleName: string;
   status: 'pending' | 'matching' | 'matched' | 'unmatched';
   matchedResult: SearchResult | null;
@@ -53,6 +55,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
   const { showToast } = useToast();
   
   const [bottles, setBottles] = useState<string[]>([]);
+  const [pdVms, setPdVms] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
   const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
@@ -60,7 +63,6 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
   const [formData, setFormData] = useState<Partial<GameInstance>>({});
   
   const [searchExecPath, setSearchExecPath] = useState('');
-  const [searchBottleName, setSearchBottleName] = useState(config.defaultBottle || 'Default');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
@@ -75,15 +77,22 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
   });
 
   useEffect(() => {
-    fetchBottles();
-  }, [config.bottlesPath]);
+    fetchContainers();
+  }, [config.bottlesPath, config.pdPath]);
 
-  const fetchBottles = async () => {
+  const fetchContainers = async () => {
     try {
       const res = await invoke<string[]>("get_crossover_bottles", { path: config.bottlesPath });
       setBottles(res.length > 0 ? res : ["Default"]);
     } catch (e) {
       setBottles(["Default"]);
+    }
+    
+    try {
+      const res = await invoke<string[]>("get_pd_vms", { path: config.pdPath || '~/Applications (Parallels)' });
+      setPdVms(res.length > 0 ? res : []);
+    } catch (e) {
+      setPdVms([]);
     }
   };
 
@@ -127,7 +136,12 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
       showToast("名称和可执行文件路径不能为空", "error");
       return;
     }
-    const newInstance = formData as GameInstance;
+    const newInstance = {
+      ...formData,
+      runMode: formData.runMode || 'crossover',
+      bottleName: formData.bottleName || (formData.runMode === 'parallels' ? (config.defaultPdVm || '') : (config.defaultBottle || 'Default'))
+    } as GameInstance;
+
     let newInstances = instances.find(i => i.id === newInstance.id) 
       ? instances.map(i => i.id === newInstance.id ? newInstance : i)
       : [...instances, newInstance];
@@ -163,7 +177,8 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
           dirName: d.dir_name,
           executables: d.executables,
           selectedExec: d.executables[0],
-          bottleName: config.defaultBottle || bottles[0] || 'Default', // 继承全局默认容器
+          runMode: 'crossover',
+          bottleName: config.defaultBottle || bottles[0] || 'Default',
           status: 'pending',
           matchedResult: null,
           searchResults: [],
@@ -224,6 +239,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
       return {
         id: crypto.randomUUID(),
         name: finalName,
+        runMode: item.runMode,
         bottleName: item.bottleName,
         executablePath: item.selectedExec,
         info: item.manualInfo.info || '',
@@ -249,7 +265,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* ===== 主视图区域 ===== */}
+      {/* 主视图区域 */}
       {isEditing ? (
         <div className="h-full overflow-y-auto p-8 relative w-full custom-scrollbar">
           <button onClick={() => { setSelectedId(null); setImportState('none'); }} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-black dark:hover:text-white transition-colors">
@@ -273,20 +289,51 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
               <input type="text" placeholder="可粘贴图片 URL..." value={formData.backgroundImage || ''} onChange={e => setFormData({ ...formData, backgroundImage: e.target.value })} className="mt-3 w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none" />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium mb-2">实例名称</label>
+              <input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none" />
+            </div>
+
             <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium mb-2">实例名称</label>
-                <input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">选择容器</label>
+              <div className="min-w-0">
+                <label className="block text-sm font-medium mb-2 truncate">运行方式</label>
                 <div className="relative">
                   <select 
-                    value={formData.bottleName || config.defaultBottle || 'Default'} 
-                    onChange={e => setFormData({ ...formData, bottleName: e.target.value })}
-                    className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 pr-8 outline-none appearance-none"
+                    value={formData.runMode || 'crossover'} 
+                    onChange={e => {
+                      const mode = e.target.value as 'crossover' | 'parallels';
+                      setFormData({ 
+                        ...formData, 
+                        runMode: mode,
+                        bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (config.defaultBottle || bottles[0] || 'Default')
+                      });
+                    }}
+                    className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 pr-8 outline-none appearance-none transition-colors truncate"
                   >
-                    {bottles.map(b => <option key={b} value={b}>{b}</option>)}
+                    <option value="crossover">CrossOver</option>
+                    <option value="parallels">Parallels Desktop</option>
+                  </select>
+                  <DropdownArrow />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <label className="block text-sm font-medium mb-2 truncate">
+                  {formData.runMode === 'parallels' ? '指定虚拟机 (Applications)' : '指定运行容器 (Bottle)'}
+                </label>
+                <div className="relative">
+                  <select 
+                    value={formData.bottleName || ''} 
+                    onChange={e => setFormData({ ...formData, bottleName: e.target.value })}
+                    className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 pr-8 outline-none appearance-none transition-colors truncate"
+                  >
+                    {formData.runMode === 'parallels' ? (
+                      <>
+                        <option value="">-- 请选择 --</option>
+                        {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
+                      </>
+                    ) : (
+                      bottles.map(b => <option key={b} value={b}>{b}</option>)
+                    )}
                   </select>
                   <DropdownArrow />
                 </div>
@@ -336,7 +383,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setIsImportMenuOpen(false)} />
                     <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute right-0 top-full mt-2 w-36 bg-white dark:bg-[#252525] border border-black/10 dark:border-white/10 rounded-lg shadow-xl z-40 overflow-hidden">
-                      <button onClick={() => { setIsImportMenuOpen(false); setSearchBottleName(config.defaultBottle || 'Default'); setImportState('choice'); }} className="w-full text-left px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium">单个导入</button>
+                      <button onClick={() => { setIsImportMenuOpen(false); setFormData({ runMode: 'crossover', bottleName: config.defaultBottle || 'Default' }); setImportState('choice'); }} className="w-full text-left px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium">单个导入</button>
                       <button onClick={handleBatchImportClick} className="w-full text-left px-4 py-3 text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors font-medium border-t border-black/5 dark:border-white/5">批量导入</button>
                     </motion.div>
                   </>
@@ -368,7 +415,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                     </div>
                     <div className="p-4">
                       <h3 className="font-semibold text-[15px] truncate text-gray-800 dark:text-gray-200" title={inst.name}>{inst.name}</h3>
-                      <p className="text-xs text-gray-500 truncate mt-1">容器: {inst.bottleName}</p>
+                      <p className="text-xs text-gray-500 truncate mt-1">{inst.runMode === 'parallels' ? 'Parallels: ' : 'CrossOver: '}{inst.bottleName}</p>
                     </div>
                   </div>
                 ))}
@@ -378,7 +425,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
         </>
       )}
 
-      {/* ===== 弹窗区域 ===== */}
+      {/* 弹窗区域 */}
       <AnimatePresence>
         {importState !== 'none' && importState !== 'manual_form' && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -395,7 +442,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                       <div className="p-4 bg-blue-500/10 rounded-full mb-4 group-hover:scale-110 transition-transform"><Search size={40} className="text-blue-500" /></div>
                       <span className="font-semibold text-lg text-blue-500">搜索导入</span>
                     </button>
-                    <button onClick={() => { setFormData({ id: crypto.randomUUID(), bottleName: config.defaultBottle || 'Default' }); setImportState('manual_form'); }} className="group flex flex-col items-center justify-center p-8 border-2 border-transparent bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 hover:border-gray-500/30 rounded-2xl transition-all">
+                    <button onClick={() => { setFormData({ id: crypto.randomUUID(), runMode: 'crossover', bottleName: config.defaultBottle || 'Default' }); setImportState('manual_form'); }} className="group flex flex-col items-center justify-center p-8 border-2 border-transparent bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 hover:border-gray-500/30 rounded-2xl transition-all">
                       <div className="p-4 bg-black/5 dark:bg-white/10 rounded-full mb-4 group-hover:scale-110 transition-transform"><Box size={40} className="text-gray-500 dark:text-gray-400" /></div>
                       <span className="font-semibold text-lg">手动导入</span>
                     </button>
@@ -413,15 +460,54 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                           }} className="px-5 py-3 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors flex items-center justify-center"><FolderOpen size={20} /></button>
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">指定运行容器</label>
-                      <div className="relative">
-                        <select value={searchBottleName} onChange={e => setSearchBottleName(e.target.value)} className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 pr-8 outline-none appearance-none">
-                          {bottles.map(b => <option key={b} value={b}>{b}</option>)}
-                        </select>
-                        <DropdownArrow />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="min-w-0">
+                        <label className="block text-sm font-medium mb-2 truncate">运行方式</label>
+                        <div className="relative">
+                          <select
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 appearance-none focus:outline-none transition-all truncate"
+                            value={formData.runMode || 'crossover'}
+                            onChange={(e) => {
+                              const mode = e.target.value as 'crossover' | 'parallels';
+                              setFormData({ 
+                                ...formData, 
+                                runMode: mode,
+                                bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (config.defaultBottle || bottles[0] || 'Default')
+                              });
+                            }}
+                          >
+                            <option value="crossover">CrossOver</option>
+                            <option value="parallels">Parallels Desktop</option>
+                          </select>
+                          <DropdownArrow />
+                        </div>
+                      </div>
+                                      
+                      <div className="min-w-0">
+                        <label className="block text-sm font-medium mb-2 truncate">
+                          {formData.runMode === 'parallels' ? '虚拟机 (Applications)' : '指定运行容器 (Bottle)'}
+                        </label>
+                        <div className="relative">
+                          <select
+                            className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 appearance-none focus:outline-none transition-all truncate"
+                            value={formData.bottleName || ''}
+                            onChange={(e) => setFormData({ ...formData, bottleName: e.target.value })}
+                          >
+                            {formData.runMode === 'parallels' ? (
+                              <>
+                                <option value="">-- 请选择 --</option>
+                                {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
+                              </>
+                            ) : (
+                              bottles.map(b => <option key={b} value={b}>{b}</option>)
+                            )}
+                          </select>
+                          <DropdownArrow />
+                        </div>
                       </div>
                     </div>
+
                     <div className="flex justify-between items-center pt-6 mt-4 border-t border-black/5 dark:border-white/5">
                       <button onClick={() => setImportState('choice')} className="text-gray-500 px-4 py-2">上一步</button>
                       <button disabled={!searchExecPath || isSearching} onClick={handleSearchGame} className="px-8 py-3 bg-blue-500 text-white rounded-lg flex items-center gap-2">
@@ -437,7 +523,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
                         {searchResults.map(res => (
-                          <button key={res.id + res.source} onClick={() => { setFormData({ id: crypto.randomUUID(), name: res.title, backgroundImage: res.cover, executablePath: searchExecPath, bottleName: searchBottleName, info: '' }); setImportState('manual_form'); }} className="group flex flex-col bg-black/5 dark:bg-[#2a2a2a] rounded-xl overflow-hidden hover:ring-2 hover:ring-blue-500 border border-transparent dark:border-white/5 text-left">
+                          <button key={res.id + res.source} onClick={() => { setFormData({ ...formData, id: crypto.randomUUID(), name: res.title, backgroundImage: res.cover, executablePath: searchExecPath, info: '' }); setImportState('manual_form'); }} className="group flex flex-col bg-black/5 dark:bg-[#2a2a2a] rounded-xl overflow-hidden hover:ring-2 hover:ring-blue-500 border border-transparent dark:border-white/5 text-left">
                             <div className="aspect-[16/9] w-full relative"><img src={res.cover} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="cover" /><div className="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase bg-black/70 text-white rounded">{res.source}</div></div>
                             <div className="p-3"><div className="font-semibold text-sm truncate" title={res.title}>{res.title}</div></div>
                           </button>
@@ -446,7 +532,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                     )}
                     <div className="flex justify-between items-center pt-6 mt-4 border-t border-black/10 dark:border-white/10">
                       <button onClick={() => setImportState('search_params')} className="text-gray-500 px-4 py-2">重新选择</button>
-                      <button onClick={() => { setFormData({ id: crypto.randomUUID(), executablePath: searchExecPath, bottleName: searchBottleName }); setImportState('manual_form'); }} className="px-6 py-2 bg-black/5 dark:bg-white/10 rounded-lg">手动填写</button>
+                      <button onClick={() => { setFormData({ ...formData, id: crypto.randomUUID(), executablePath: searchExecPath }); setImportState('manual_form'); }} className="px-6 py-2 bg-black/5 dark:bg-white/10 rounded-lg">手动填写</button>
                     </div>
                   </div>
                 )}
@@ -459,13 +545,12 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
       <AnimatePresence>
         {isBatchModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col h-[85vh] border border-white/10">
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col h-[85vh] border border-white/10">
               <div className="px-6 py-4 border-b border-black/10 dark:border-white/10 flex justify-between items-center bg-black/5 dark:bg-white/5 shrink-0">
                 <h2 className="text-lg font-semibold flex items-center gap-2"><FolderOpen size={20} className="text-blue-500" /> 批量导入游戏</h2>
                 <button onClick={() => setIsBatchModalOpen(false)} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-full transition-colors"><X size={20} /></button>
               </div>
 
-              {/* 此处赋予明确的 flex-1 与 overflow，触发滚动条 */}
               <div className="flex-1 overflow-hidden relative flex flex-col bg-white dark:bg-[#1e1e1e]">
                 {editingBatchItemId ? (() => {
                   const item = batchItems.find(i => i.id === editingBatchItemId)!;
@@ -501,15 +586,15 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                     <table className="w-full text-left text-sm whitespace-nowrap">
                       <thead className="sticky top-0 bg-gray-100 dark:bg-[#2a2a2a] z-10 shadow-sm">
                         <tr>
-                          {/* 全选框 */}
                           <th className="p-4 w-12 text-center">
                             <input type="checkbox" className="w-4 h-4 rounded text-blue-500" checked={isAllSelected} onChange={toggleSelectAll} />
                           </th>
                           <th className="p-4 font-semibold">识别目录名</th>
                           <th className="p-4 font-semibold">执行程序 (Exe)</th>
+                          <th className="p-4 w-32 font-semibold">运行方式</th>
                           <th className="p-4 w-40 font-semibold">运行容器</th>
-                          <th className="p-4 w-32 font-semibold">匹配状态</th>
-                          <th className="p-4 w-24 font-semibold text-right">操作</th>
+                          <th className="p-4 w-28 font-semibold">匹配状态</th>
+                          <th className="p-4 w-20 font-semibold text-right">操作</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-black/5 dark:divide-white/5">
@@ -521,8 +606,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                             <td className="p-4 font-medium max-w-[150px] truncate" title={item.dirName}>
                               {item.manualInfo.name || item.matchedResult?.title || item.dirName}
                             </td>
-                            <td className="p-4 max-w-[200px]">
-                              {/* 美化的下拉条 */}
+                            <td className="p-4 max-w-[180px]">
                               <div className="relative">
                                 <select 
                                   value={item.selectedExec} 
@@ -537,11 +621,37 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                             <td className="p-4">
                               <div className="relative">
                                 <select 
-                                  value={item.bottleName} 
-                                  onChange={e => updateBatchItem(item.id, {bottleName: e.target.value})} 
+                                  value={item.runMode} 
+                                  onChange={e => {
+                                    const mode = e.target.value as 'crossover' | 'parallels';
+                                    updateBatchItem(item.id, {
+                                      runMode: mode,
+                                      bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (config.defaultBottle || bottles[0] || 'Default')
+                                    });
+                                  }} 
                                   className="w-full bg-transparent border border-black/10 dark:border-white/10 rounded px-2 py-1.5 pr-8 outline-none appearance-none"
                                 >
-                                  {bottles.map(b => <option key={b} value={b}>{b}</option>)}
+                                  <option value="crossover">CrossOver</option>
+                                  <option value="parallels">Parallels</option>
+                                </select>
+                                <DropdownArrow />
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className="relative">
+                                <select 
+                                  value={item.bottleName} 
+                                  onChange={e => updateBatchItem(item.id, {bottleName: e.target.value})} 
+                                  className="w-full bg-transparent border border-black/10 dark:border-white/10 rounded px-2 py-1.5 pr-8 outline-none appearance-none truncate"
+                                >
+                                  {item.runMode === 'parallels' ? (
+                                    <>
+                                      <option value="">-- 请选择 --</option>
+                                      {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
+                                    </>
+                                  ) : (
+                                    bottles.map(b => <option key={b} value={b}>{b}</option>)
+                                  )}
                                 </select>
                                 <DropdownArrow />
                               </div>

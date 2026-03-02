@@ -48,6 +48,17 @@ struct GameDirInfo {
     executables: Vec<String>,
 }
 
+fn expand_tilde(path_str: &str) -> PathBuf {
+    if path_str.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            // 去掉前缀 "~/"，把剩下的部分拼接到 home 目录后面
+            return home.join(path_str.trim_start_matches("~/"));
+        }
+    }
+    // 如果没有 ~，或者获取 Home 目录失败，直接返回原路径
+    PathBuf::from(path_str)
+}
+
 #[command]
 fn get_home_dir() -> String {
     // 使用 dirs crate 获取主目录，如果获取失败返回空字符串
@@ -324,6 +335,26 @@ fn scan_game_directories(path: String) -> Result<Vec<GameDirInfo>, String> {
     Ok(results)
 }
 
+#[command]
+fn get_pd_vms(path: String) -> Vec<String> {
+    let mut vms = Vec::new();
+    let expanded = expand_tilde(&path);
+    if let Ok(entries) = std::fs::read_dir(expanded) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    // Parallels 的虚拟机应用通常存储在以 "Applications.localized" 或 "Applications" 结尾的文件夹中
+                    if name.ends_with("Applications.localized") || name.ends_with("Applications") {
+                        vms.push(name);
+                    }
+                }
+            }
+        }
+    }
+    vms
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -341,7 +372,8 @@ pub fn run() {
             fetch_ymgal_news,
             search_game,
             get_directory_keywords,
-            scan_game_directories
+            scan_game_directories,
+            get_pd_vms
         ])
         .setup(|app| {
             // 获取主窗口

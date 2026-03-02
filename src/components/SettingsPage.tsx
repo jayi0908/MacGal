@@ -13,6 +13,7 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingTab>("global");
   const [systemFonts, setSystemFonts] = useState<string[]>([]);
   const [bottles, setBottles] = useState<string[]>([]);
+  const [pdVms, setPdVms] = useState<string[]>([]);
 
   // 加载系统字体
   useEffect(() => {
@@ -30,16 +31,19 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    const loadBottles = async () => {
+    const loadContainers = async () => {
       try {
-        const res = await invoke<string[]>("get_crossover_bottles", { path: config.bottlesPath });
-        setBottles(res.length > 0 ? res : ["Default"]);
-      } catch (e) {
-        setBottles(["Default"]);
-      }
+        const resBottles = await invoke<string[]>("get_crossover_bottles", { path: config.bottlesPath });
+        setBottles(resBottles.length > 0 ? resBottles : ["Default"]);
+      } catch (e) { setBottles(["Default"]); }
+
+      try {
+        const resVms = await invoke<string[]>("get_pd_vms", { path: config.pdPath });
+        setPdVms(resVms.length > 0 ? resVms : [""]);
+      } catch (e) { setPdVms([""]); }
     };
-    loadBottles();
-  }, [config.bottlesPath]);
+    loadContainers();
+  }, [config.bottlesPath, config.pdPath]);
 
   const getHomePath = async () => {
     try {
@@ -58,7 +62,7 @@ export function SettingsPage() {
     } catch (e) { console.error(e); }
   };
 
-  const handleSelectFolder = async (key: 'crossoverPath' | 'bottlesPath') => {
+  const handleSelectFolder = async (key: 'crossoverPath' | 'bottlesPath' | 'pdPath') => {
      try {
       const home = await getHomePath();
       const defaultPath = key === 'crossoverPath' ? '/Applications' : home;
@@ -164,6 +168,14 @@ export function SettingsPage() {
                     <button onClick={() => handleSelectFolder('bottlesPath')} className="p-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500"><FolderOpen size={18} /></button>
                   </div>
                 </div>
+
+                <div className="space-y-1">
+                  <label className={labelClass}>PD 虚拟机本地路径</label>
+                  <div className="flex gap-2">
+                    <input type="text" value={config.pdPath} onChange={(e) => updateConfig({ pdPath: e.target.value })} className={inputClass} />
+                    <button onClick={() => handleSelectFolder('pdPath')} className="p-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500"><FolderOpen size={18} /></button>
+                  </div>
+                </div>
               </div>
             </div>
             {/* 默认游戏容器设置 */}
@@ -171,7 +183,7 @@ export function SettingsPage() {
               <h2 className={subHeadingClass}><FolderOpen size={20} /> 默认运行容器</h2>
               <div className="space-y-4 mt-2">
                 <div className="flex flex-col gap-1">
-                  <span className={labelClass}>全局默认容器</span>
+                  <span className={labelClass}>CrossOver 全局默认容器</span>
                   <div className="relative">
                       <select 
                         value={config.defaultBottle || "Default"}
@@ -190,6 +202,30 @@ export function SettingsPage() {
                       </div>
                   </div>
                   <span className="text-xs text-gray-500 mt-1 dark:text-gray-400">导入游戏或新建实例时，将会默认分配到此容器</span>
+                </div>
+              </div>
+
+              <div className="space-y-4 mt-2">
+                <div className="flex flex-col gap-1">
+                  <span className={labelClass}>Parallels Desktop 全局默认虚拟机 (Applications)</span>
+                  <div className="relative">
+                      <select 
+                        value={config.defaultPdVm || "Default"}
+                        onChange={(e) => updateConfig({ defaultPdVm: e.target.value })}
+                        className={inputClass}
+                      >
+                        {pdVms.map(vm => (
+                            <option key={vm} value={vm}>{vm}</option>
+                        ))}
+                      </select>
+                      {/* 自定义下拉箭头图标 */}
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
+                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
+                  </div>
+                  <span className="text-xs text-gray-500 mt-1 dark:text-gray-400">导入游戏或新建实例时，将会默认分配到此虚拟机 APP，要确定目标虚拟机的 id 可将访达中 PD 虚拟机本地路径下的 Applications 文件夹拖到终端中</span>
                 </div>
               </div>
             </div>
