@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { Plus, Box, Save, Trash2, FolderOpen, Play, Settings, Search, X, Loader2, ArrowLeft, Image as ImageIcon, ChevronDown, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, Box, Save, Trash2, FolderOpen, Play, Settings, Search, X, Loader2, ArrowLeft, Image as ImageIcon, ChevronDown, CheckCircle, AlertCircle, FileCode2 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "./ToastProvider";
 import { DeleteModal } from "./DeleteModal";
@@ -17,7 +17,7 @@ export interface GameInstance {
   lastPlayed?: number;
   totalPlayTime?: number;
   playHistory?: Record<string, number>;
-  runMode?: 'crossover' | 'parallels';
+  runMode?: 'crossover' | 'parallels' | 'direct';
 }
 
 interface SearchResult {
@@ -34,7 +34,7 @@ interface BatchItem {
   dirName: string;
   executables: string[];
   selectedExec: string;
-  runMode: 'crossover' | 'parallels';
+  runMode: 'crossover' | 'parallels' | 'direct';
   bottleName: string;
   status: 'pending' | 'matching' | 'matched' | 'unmatched';
   matchedResult: SearchResult | null;
@@ -56,6 +56,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
   
   const [bottles, setBottles] = useState<string[]>([]);
   const [pdVms, setPdVms] = useState<string[]>([]);
+  const [scripts, setScripts] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
   const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
@@ -71,6 +72,24 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
   const [isBatchMatching, setIsBatchMatching] = useState(false);
   const [editingBatchItemId, setEditingBatchItemId] = useState<string | null>(null);
 
+  const [scriptModal, setScriptModal] = useState<{
+    isOpen: boolean;
+    targetId: string | null;
+    view: 'select' | 'edit';
+    isAccordionOpen: boolean;
+    selectedScript: string;
+    editName: string;
+    editContent: string;
+  }>({
+    isOpen: false,
+    targetId: null,
+    view: 'select',
+    isAccordionOpen: false,
+    selectedScript: '',
+    editName: '',
+    editContent: ''
+  });
+
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; instance: GameInstance | null }>({
     isOpen: false,
     instance: null,
@@ -84,16 +103,70 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
     try {
       const res = await invoke<string[]>("get_crossover_bottles", { path: config.bottlesPath });
       setBottles(res.length > 0 ? res : ["Default"]);
-    } catch (e) {
-      setBottles(["Default"]);
-    }
+    } catch (e) { setBottles(["Default"]); }
     
     try {
+      // @ts-ignore
       const res = await invoke<string[]>("get_pd_vms", { path: config.pdPath || '~/Applications (Parallels)' });
       setPdVms(res.length > 0 ? res : []);
-    } catch (e) {
-      setPdVms([]);
+    } catch (e) { setPdVms([]); }
+
+    try {
+      const res = await invoke<string[]>("get_scripts");
+      setScripts(res || []);
+    } catch (e) { setScripts([]); }
+  };
+
+  const handleOpenScriptModal = (targetId: string | null, currentScript: string) => {
+    setScriptModal(prev => ({
+      ...prev,
+      isOpen: true,
+      targetId,
+      view: 'select',
+      isAccordionOpen: false,
+      selectedScript: currentScript && currentScript !== 'Default' ? currentScript : '',
+      editName: '',
+      editContent: ''
+    }));
+  };
+
+  const handleEditScript = async () => {
+    if (scriptModal.selectedScript) {
+      try {
+        const content = await invoke<string>('read_script', { name: scriptModal.selectedScript });
+        setScriptModal(prev => ({ ...prev, view: 'edit', editName: prev.selectedScript, editContent: content }));
+      } catch (e) { showToast(`读取失败: ${e}`, "error"); }
+    } else {
+      setScriptModal(prev => ({ ...prev, view: 'edit', editName: '', editContent: '' }));
     }
+  };
+
+  const handleSaveScript = async () => {
+    if (!scriptModal.editName.trim()) {
+      showToast("请补全脚本名称", "error");
+      return;
+    }
+    try {
+      await invoke('save_script', { name: scriptModal.editName.trim(), content: scriptModal.editContent });
+      await fetchContainers();
+      setScriptModal(prev => ({
+        ...prev,
+        view: 'select',
+        selectedScript: prev.editName.trim()
+      }));
+    } catch (e) {
+      showToast(`保存失败: ${e}`, "error");
+    }
+  };
+
+  const handleConfirmScript = () => {
+    const finalVal = scriptModal.selectedScript;
+    if (scriptModal.targetId) {
+      updateBatchItem(scriptModal.targetId, { bottleName: finalVal });
+    } else {
+      setFormData({ ...formData, bottleName: finalVal });
+    }
+    setScriptModal(prev => ({ ...prev, isOpen: false }));
   };
 
   const fetchGameResults = async (keywords: string[]): Promise<SearchResult[]> => {
@@ -139,7 +212,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
     const newInstance = {
       ...formData,
       runMode: formData.runMode || 'crossover',
-      bottleName: formData.bottleName || (formData.runMode === 'parallels' ? (config.defaultPdVm || '') : (config.defaultBottle || 'Default'))
+      bottleName: formData.bottleName || (formData.runMode === 'parallels' ? (config.defaultPdVm || '') : (formData.runMode === 'crossover' ? (config.defaultBottle || 'Default') : ''))
     } as GameInstance;
 
     let newInstances = instances.find(i => i.id === newInstance.id) 
@@ -252,7 +325,6 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
     showToast(`成功批量导入 ${newInstances.length} 个游戏`, "success");
   };
 
-  // 抽出下拉箭头的组件以复用
   const DropdownArrow = () => (
     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
       <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -265,7 +337,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* 主视图区域 */}
+      {/* ===== 主视图区域 ===== */}
       {isEditing ? (
         <div className="h-full overflow-y-auto p-8 relative w-full custom-scrollbar">
           <button onClick={() => { setSelectedId(null); setImportState('none'); }} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-black dark:hover:text-white transition-colors">
@@ -277,8 +349,9 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
             <div>
               <label className="block text-sm font-medium mb-2">封面横幅 (Banner URL)</label>
               <div className="relative aspect-[21/9] w-full bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 overflow-hidden group">
+                {/* 兼容用户手动输入本地路径的情况 */}
                 {formData.backgroundImage ? (
-                  <img src={formData.backgroundImage} className="w-full h-full object-cover" alt="Banner" />
+                  <img src={formData.backgroundImage.startsWith('/') ? convertFileSrc(formData.backgroundImage) : formData.backgroundImage} className="w-full h-full object-cover" alt="Banner" />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
                     <ImageIcon size={48} className="mb-2 opacity-50" />
@@ -286,7 +359,28 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                   </div>
                 )}
               </div>
-              <input type="text" placeholder="可粘贴图片 URL..." value={formData.backgroundImage || ''} onChange={e => setFormData({ ...formData, backgroundImage: e.target.value })} className="mt-3 w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none" />
+              <div className="flex gap-2 mt-3">
+                <input 
+                  type="text" 
+                  placeholder="可粘贴图片 URL 或本地路径..." 
+                  value={formData.backgroundImage || ''} 
+                  onChange={e => setFormData({ ...formData, backgroundImage: e.target.value })} 
+                  className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none" 
+                />
+                <button 
+                  onClick={async () => {
+                    const res = await open({ filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] });
+                    if (res && typeof res === 'string') {
+                      // 选中后直接转换为 asset:// 安全协议保存
+                      setFormData({ ...formData, backgroundImage: convertFileSrc(res) });
+                    }
+                  }} 
+                  className="px-4 py-2 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
+                  title="选择本地图片"
+                >
+                  <FolderOpen size={20} />
+                </button>
+              </div>
             </div>
 
             <div>
@@ -301,42 +395,58 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                   <select 
                     value={formData.runMode || 'crossover'} 
                     onChange={e => {
-                      const mode = e.target.value as 'crossover' | 'parallels';
+                      const mode = e.target.value as 'crossover' | 'parallels' | 'direct';
                       setFormData({ 
                         ...formData, 
                         runMode: mode,
-                        bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (config.defaultBottle || bottles[0] || 'Default')
+                        bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (mode === 'crossover' ? (config.defaultBottle || bottles[0] || 'Default') : '')
                       });
                     }}
                     className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 pr-8 outline-none appearance-none transition-colors truncate"
                   >
                     <option value="crossover">CrossOver</option>
                     <option value="parallels">Parallels Desktop</option>
+                    <option value="direct">Direct (原生 .app)</option>
                   </select>
                   <DropdownArrow />
                 </div>
               </div>
               <div className="min-w-0">
                 <label className="block text-sm font-medium mb-2 truncate">
-                  {formData.runMode === 'parallels' ? '指定虚拟机 (Applications)' : '指定运行容器 (Bottle)'}
+                  {formData.runMode === 'parallels' ? '指定虚拟机 (Applications)' : (formData.runMode === 'direct' ? '指定运行前执行命令' : '指定运行容器 (Bottle)')}
                 </label>
-                <div className="relative">
-                  <select 
-                    value={formData.bottleName || ''} 
-                    onChange={e => setFormData({ ...formData, bottleName: e.target.value })}
-                    className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 pr-8 outline-none appearance-none transition-colors truncate"
-                  >
-                    {formData.runMode === 'parallels' ? (
-                      <>
-                        <option value="">-- 请选择 --</option>
-                        {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
-                      </>
-                    ) : (
-                      bottles.map(b => <option key={b} value={b}>{b}</option>)
-                    )}
-                  </select>
-                  <DropdownArrow />
-                </div>
+                {formData.runMode === 'direct' ? (
+                  <div className="flex gap-2">
+                    <input 
+                      readOnly 
+                      value={formData.bottleName || ''} 
+                      placeholder="默认为空" 
+                      onClick={() => handleOpenScriptModal(null, formData.bottleName || '')}
+                      className="flex-1 cursor-pointer bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none truncate hover:bg-black/10 transition-colors"
+                    />
+                    <button onClick={() => handleOpenScriptModal(null, formData.bottleName || '')} className="px-3 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors">
+                      <FileCode2 size={20} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <select 
+                      value={formData.bottleName || ''} 
+                      onChange={e => setFormData({ ...formData, bottleName: e.target.value })}
+                      className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 pr-8 outline-none appearance-none transition-colors truncate"
+                    >
+                      {formData.runMode === 'parallels' ? (
+                        <>
+                          <option value="">-- 请选择 --</option>
+                          {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
+                        </>
+                      ) : (
+                        bottles.map(b => <option key={b} value={b}>{b}</option>)
+                      )}
+                    </select>
+                    <DropdownArrow />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -345,7 +455,15 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
               <div className="flex gap-2">
                 <input value={formData.executablePath || ''} readOnly className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none" />
                 <button onClick={async () => {
-                    const selected = await open({ filters: [{ name: 'Executable', extensions: ['exe'] }] });
+                    let selected;
+                    // 修复 2：针对 .app 使用特殊的 extensions 过滤器，而不是 directory: true
+                    if (formData.runMode === 'direct') {
+                      const res = await open({ filters: [{ name: 'Application', extensions: ['app'] }] }); 
+                      selected = Array.isArray(res) ? res[0] : res;
+                    } else {
+                      const res = await open({ filters: [{ name: 'Executable', extensions: ['exe'] }] });
+                      selected = Array.isArray(res) ? res[0] : res;
+                    }
                     if (selected && typeof selected === 'string') setFormData({ ...formData, executablePath: selected });
                   }} className="px-4 py-2 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors">
                   <FolderOpen size={20} />
@@ -415,7 +533,10 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                     </div>
                     <div className="p-4">
                       <h3 className="font-semibold text-[15px] truncate text-gray-800 dark:text-gray-200" title={inst.name}>{inst.name}</h3>
-                      <p className="text-xs text-gray-500 truncate mt-1">{inst.runMode === 'parallels' ? 'Parallels: ' : 'CrossOver: '}{inst.bottleName}</p>
+                      <p className="text-xs text-gray-500 truncate mt-1">
+                        {inst.runMode === 'parallels' ? 'PD: ' : (inst.runMode === 'direct' ? 'Direct: ' : 'CX: ')}
+                        {inst.bottleName || (inst.runMode === 'direct' ? '无前置' : '')}
+                      </p>
                     </div>
                   </div>
                 ))}
@@ -425,7 +546,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
         </>
       )}
 
-      {/* 弹窗区域 */}
+      {/* ===== 选择及检索弹窗 ===== */}
       <AnimatePresence>
         {importState !== 'none' && importState !== 'manual_form' && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -435,7 +556,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                 <button onClick={() => setImportState('none')} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-full transition-colors"><X size={20} /></button>
               </div>
 
-              <div className="p-8 overflow-y-auto custom-scrollbar">
+              <div className="p-8 overflow-y-auto overflow-x-hidden custom-scrollbar">
                 {importState === 'choice' && (
                   <div className="grid grid-cols-2 gap-6">
                     <button onClick={() => setImportState('search_params')} className="group flex flex-col items-center justify-center p-8 border-2 border-transparent bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500/30 rounded-2xl transition-all">
@@ -450,17 +571,6 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                 )}
                 {importState === 'search_params' && (
                   <div className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">选择可执行文件 (.exe)</label>
-                      <div className="flex gap-2">
-                        <input type="text" value={searchExecPath} readOnly className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 outline-none" />
-                        <button onClick={async () => {
-                            const selected = await open({ filters: [{ name: 'Executable', extensions: ['exe'] }] });
-                            if (selected && typeof selected === 'string') setSearchExecPath(selected);
-                          }} className="px-5 py-3 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors flex items-center justify-center"><FolderOpen size={20} /></button>
-                      </div>
-                    </div>
-
                     <div className="grid grid-cols-2 gap-4">
                       <div className="min-w-0">
                         <label className="block text-sm font-medium mb-2 truncate">运行方式</label>
@@ -469,16 +579,18 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                             className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 appearance-none focus:outline-none transition-all truncate"
                             value={formData.runMode || 'crossover'}
                             onChange={(e) => {
-                              const mode = e.target.value as 'crossover' | 'parallels';
+                              const mode = e.target.value as 'crossover' | 'parallels' | 'direct';
                               setFormData({ 
                                 ...formData, 
                                 runMode: mode,
-                                bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (config.defaultBottle || bottles[0] || 'Default')
+                                executablePath: '', // 切换模式重置路径，以免 .exe 和 .app 互串
+                                bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (mode === 'crossover' ? (config.defaultBottle || bottles[0] || 'Default') : '')
                               });
                             }}
                           >
                             <option value="crossover">CrossOver</option>
                             <option value="parallels">Parallels Desktop</option>
+                            <option value="direct">Direct (原生 .app)</option>
                           </select>
                           <DropdownArrow />
                         </div>
@@ -486,25 +598,61 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                                       
                       <div className="min-w-0">
                         <label className="block text-sm font-medium mb-2 truncate">
-                          {formData.runMode === 'parallels' ? '虚拟机 (Applications)' : '指定运行容器 (Bottle)'}
+                          {formData.runMode === 'parallels' ? '虚拟机 (Applications)' : (formData.runMode === 'direct' ? '指定运行前执行命令' : '指定运行容器 (Bottle)')}
                         </label>
-                        <div className="relative">
-                          <select
-                            className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 appearance-none focus:outline-none transition-all truncate"
-                            value={formData.bottleName || ''}
-                            onChange={(e) => setFormData({ ...formData, bottleName: e.target.value })}
-                          >
-                            {formData.runMode === 'parallels' ? (
-                              <>
-                                <option value="">-- 请选择 --</option>
-                                {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
-                              </>
-                            ) : (
-                              bottles.map(b => <option key={b} value={b}>{b}</option>)
-                            )}
-                          </select>
-                          <DropdownArrow />
-                        </div>
+                        {formData.runMode === 'direct' ? (
+                          <div className="flex gap-2">
+                            <input 
+                              readOnly 
+                              value={formData.bottleName || ''} 
+                              placeholder="默认为空" 
+                              onClick={() => handleOpenScriptModal(null, formData.bottleName || '')}
+                              className="flex-1 cursor-pointer bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 outline-none truncate hover:bg-black/10 transition-colors"
+                            />
+                            <button onClick={() => handleOpenScriptModal(null, formData.bottleName || '')} className="px-3 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors">
+                              <FileCode2 size={20} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="relative">
+                            <select
+                              className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 appearance-none focus:outline-none transition-all truncate"
+                              value={formData.bottleName || ''}
+                              onChange={(e) => setFormData({ ...formData, bottleName: e.target.value })}
+                            >
+                              {formData.runMode === 'parallels' ? (
+                                <>
+                                  <option value="">-- 请选择 --</option>
+                                  {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
+                                </>
+                              ) : (
+                                bottles.map(b => <option key={b} value={b}>{b}</option>)
+                              )}
+                            </select>
+                            <DropdownArrow />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        选择可执行文件 {formData.runMode === 'direct' ? '(.app)' : '(.exe)'}
+                      </label>
+                      <div className="flex gap-2">
+                        <input type="text" value={searchExecPath} readOnly className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-3 outline-none" />
+                        <button onClick={async () => {
+                            let selected;
+                            // 修复 2：针对 .app 使用特殊的 extensions 过滤器，而不是 directory: true
+                            if (formData.runMode === 'direct') {
+                              const res = await open({ filters: [{ name: 'Application', extensions: ['app'] }] }); 
+                              selected = Array.isArray(res) ? res[0] : res;
+                            } else {
+                              const res = await open({ filters: [{ name: 'Executable', extensions: ['exe'] }] });
+                              selected = Array.isArray(res) ? res[0] : res;
+                            }
+                            if (selected && typeof selected === 'string') setSearchExecPath(selected);
+                          }} className="px-5 py-3 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors flex items-center justify-center"><FolderOpen size={20} /></button>
                       </div>
                     </div>
 
@@ -542,6 +690,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
         )}
       </AnimatePresence>
 
+      {/* ===== 批量导入弹窗 ===== */}
       <AnimatePresence>
         {isBatchModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -592,7 +741,7 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                           <th className="p-4 font-semibold">识别目录名</th>
                           <th className="p-4 font-semibold">执行程序 (Exe)</th>
                           <th className="p-4 w-32 font-semibold">运行方式</th>
-                          <th className="p-4 w-40 font-semibold">运行容器</th>
+                          <th className="p-4 w-40 font-semibold">运行容器 / 脚本</th>
                           <th className="p-4 w-28 font-semibold">匹配状态</th>
                           <th className="p-4 w-20 font-semibold text-right">操作</th>
                         </tr>
@@ -623,38 +772,45 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                                 <select 
                                   value={item.runMode} 
                                   onChange={e => {
-                                    const mode = e.target.value as 'crossover' | 'parallels';
+                                    const mode = e.target.value as 'crossover' | 'parallels' | 'direct';
                                     updateBatchItem(item.id, {
                                       runMode: mode,
-                                      bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (config.defaultBottle || bottles[0] || 'Default')
+                                      bottleName: mode === 'parallels' ? (config.defaultPdVm || pdVms[0] || '') : (mode === 'crossover' ? (config.defaultBottle || bottles[0] || 'Default') : '')
                                     });
                                   }} 
                                   className="w-full bg-transparent border border-black/10 dark:border-white/10 rounded px-2 py-1.5 pr-8 outline-none appearance-none"
                                 >
                                   <option value="crossover">CrossOver</option>
                                   <option value="parallels">Parallels</option>
+                                  <option value="direct">Direct (.app)</option>
                                 </select>
                                 <DropdownArrow />
                               </div>
                             </td>
                             <td className="p-4">
-                              <div className="relative">
-                                <select 
-                                  value={item.bottleName} 
-                                  onChange={e => updateBatchItem(item.id, {bottleName: e.target.value})} 
-                                  className="w-full bg-transparent border border-black/10 dark:border-white/10 rounded px-2 py-1.5 pr-8 outline-none appearance-none truncate"
-                                >
-                                  {item.runMode === 'parallels' ? (
-                                    <>
-                                      <option value="">-- 请选择 --</option>
-                                      {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
-                                    </>
-                                  ) : (
-                                    bottles.map(b => <option key={b} value={b}>{b}</option>)
-                                  )}
-                                </select>
-                                <DropdownArrow />
-                              </div>
+                              {item.runMode === 'direct' ? (
+                                <button onClick={() => handleOpenScriptModal(item.id, item.bottleName)} className="w-full text-left bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 rounded px-2 py-1.5 truncate">
+                                  {item.bottleName || '无前置执行脚本 (点击设置)'}
+                                </button>
+                              ) : (
+                                <div className="relative">
+                                  <select 
+                                    value={item.bottleName} 
+                                    onChange={e => updateBatchItem(item.id, {bottleName: e.target.value})} 
+                                    className="w-full bg-transparent border border-black/10 dark:border-white/10 rounded px-2 py-1.5 pr-8 outline-none appearance-none truncate"
+                                  >
+                                    {item.runMode === 'parallels' ? (
+                                      <>
+                                        <option value="">-- 请选择 --</option>
+                                        {pdVms.map(vm => <option key={vm} value={vm}>{vm}</option>)}
+                                      </>
+                                    ) : (
+                                      bottles.map(b => <option key={b} value={b}>{b}</option>)
+                                    )}
+                                  </select>
+                                  <DropdownArrow />
+                                </div>
+                              )}
                             </td>
                             <td className="p-4">
                               {item.status === 'pending' && <span className="text-gray-400 flex items-center gap-1"><AlertCircle size={14}/> 待匹配</span>}
@@ -682,6 +838,93 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                   <button disabled={isBatchMatching} onClick={handleConfirmBatchImport} className="px-6 py-2 bg-blue-500 text-white rounded-lg flex items-center gap-2"><Save size={16} /> 导入</button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== 脚本管理弹窗 ===== */}
+      <AnimatePresence>
+        {scriptModal.isOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            {/* 修复 1：将 max-w-md 改为 max-w-xl 增加弹窗宽度，避免底部按钮越界截断 */}
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col border border-white/10">
+              <div className="px-6 py-4 border-b border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+                <h2 className="text-lg font-semibold">{scriptModal.view === 'select' ? '选择前置执行脚本' : '编辑脚本'}</h2>
+              </div>
+
+              {scriptModal.view === 'select' ? (
+                <div className="p-6">
+                  <div className="border border-black/10 dark:border-white/10 rounded-xl overflow-hidden mb-6">
+                    <button 
+                      className="w-full text-left p-4 bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 transition-colors flex justify-between items-center" 
+                      onClick={() => setScriptModal(prev => ({...prev, isAccordionOpen: !prev.isAccordionOpen}))}
+                    >
+                      <span className="font-medium">导入现有脚本</span>
+                      <ChevronDown className={`transition-transform duration-300 ${scriptModal.isAccordionOpen ? 'rotate-180' : ''}`} size={18}/>
+                    </button>
+                    <AnimatePresence>
+                      {scriptModal.isAccordionOpen && (
+                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
+                          <div className="p-2 border-t border-black/10 dark:border-white/10 max-h-48 overflow-y-auto custom-scrollbar">
+                            {scripts.length === 0 ? (
+                              <div className="text-gray-400 text-sm p-4 text-center">暂无可用脚本</div>
+                            ) : (
+                              scripts.map(s => (
+                                <div 
+                                  key={s} 
+                                  onClick={() => setScriptModal(prev => ({...prev, selectedScript: s}))} 
+                                  className={`p-3 rounded-lg cursor-pointer transition-colors text-sm ${scriptModal.selectedScript === s ? 'bg-blue-500 text-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+                                >
+                                  {s}.sh
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <button 
+                    onClick={handleEditScript}
+                    className="w-full p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl hover:border-blue-500 hover:text-blue-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {scriptModal.selectedScript ? '编辑现有脚本' : '添加新脚本'}
+                  </button>
+
+                  <div className="flex justify-between items-center pt-6 mt-6 border-t border-black/10 dark:border-white/10">
+                    <button onClick={() => setScriptModal(prev => ({...prev, isOpen: false}))} className="text-gray-500 px-4 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg">取消 / 关闭</button>
+                    <button onClick={handleConfirmScript} className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">导入并应用</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 flex flex-col h-[60vh]">
+                  <textarea 
+                    className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl p-4 font-mono text-sm outline-none resize-none custom-scrollbar mb-6"
+                    placeholder="#!/bin/bash&#10;echo 'Hello World'"
+                    value={scriptModal.editContent}
+                    onChange={e => setScriptModal(prev => ({...prev, editContent: e.target.value}))}
+                  />
+                  
+                  <div className="flex items-center justify-between border-t border-black/10 dark:border-white/10 pt-4">
+                    <div className="flex items-center gap-2 flex-1 mr-4">
+                      <span className="text-sm whitespace-nowrap">保存为:</span>
+                      <input 
+                        className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-3 py-2 text-sm outline-none" 
+                        value={scriptModal.editName}
+                        placeholder="脚本名称"
+                        onChange={e => setScriptModal(prev => ({...prev, editName: e.target.value}))}
+                      />
+                      <span className="text-sm whitespace-nowrap text-gray-500">.sh</span>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => setScriptModal(prev => ({...prev, view: 'select'}))} className="px-4 py-2 text-gray-500 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg">上一步</button>
+                      <button onClick={handleSaveScript} className="px-6 py-2 bg-blue-500 text-white rounded-lg flex items-center gap-2 hover:bg-blue-600"><Save size={16}/> 保存</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}

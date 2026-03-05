@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tauri::{command, AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, command};
 use std::time::Instant;
 use std::thread;
 
@@ -29,6 +29,31 @@ fn expand_tilde(path_str: &str) -> PathBuf {
     }
     // 如果没有 ~，或者获取 Home 目录失败，直接返回原路径
     PathBuf::from(path_str)
+}
+
+#[command]
+pub fn get_crossover_bottles(path: String) -> Result<Vec<String>, String> {
+    let bottles_path = expand_tilde(&path);
+
+    if !bottles_path.exists() {
+        return Err(format!("未找到容器目录: {:?}", bottles_path));
+    }
+
+    let mut bottles = Vec::new();
+
+    let entries = fs::read_dir(bottles_path).map_err(|e| e.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                bottles.push(name.to_string());
+            }
+        }
+    }
+
+    Ok(bottles)
 }
 
 fn extract_vm_name(path: &str) -> Option<String> {
@@ -142,6 +167,45 @@ pub async fn launch_game(app: AppHandle, instance_id: String, config: WineConfig
 
         return Ok(pid);
     }
+    else if mode == "direct" {
+        // 如果 bottle_path 不为空且不是 "Default"，则说明指定了前置执行脚本
+        if !config.bottle_path.is_empty() && config.bottle_path != "Default" {
+            let script_dir = app.path().resolve("scripts", tauri::path::BaseDirectory::AppLocalData).unwrap();
+            let script_path = script_dir.join(format!("{}.sh", config.bottle_path));
+            if script_path.exists() {
+                // 阻塞执行前置脚本
+                let _ = Command::new("sh").arg(&script_path).status();
+            }
+        }
+
+        let app_path = expand_tilde(&config.game_exe);
+        if !app_path.exists() {
+            return Err(format!("找不到指定的原生应用: {:?}", app_path));
+        }
+
+        let mut child = Command::new("open")
+            .arg("-W") // -W 阻塞等待应用被关闭
+            .arg(&app_path)
+            .spawn()
+            .map_err(|e| format!("无法启动应用: {}", e))?;
+
+        let pid = child.id();
+        let app_handle = app.clone();
+        let i_id = instance_id.clone();
+
+        thread::spawn(move || {
+            let start_time = Instant::now();
+            let _ = child.wait();
+            let duration = start_time.elapsed().as_secs();
+            println!("游戏 {} 已退出，总时长: {}秒", i_id, duration);
+            let _ = app_handle.emit("game-finished", GameFinishedPayload {
+                instance_id: i_id,
+                duration_sec: duration,
+            });
+        });
+
+        return Ok(pid);
+    }
 
     let game_path = expand_tilde(&config.game_exe);
     if !game_path.exists() {
@@ -195,29 +259,4 @@ pub async fn launch_game(app: AppHandle, instance_id: String, config: WineConfig
     });
 
     Ok(pid)
-}
-
-#[command]
-pub fn get_crossover_bottles(path: String) -> Result<Vec<String>, String> {
-    let bottles_path = expand_tilde(&path);
-
-    if !bottles_path.exists() {
-        return Err(format!("未找到容器目录: {:?}", bottles_path));
-    }
-
-    let mut bottles = Vec::new();
-
-    let entries = fs::read_dir(bottles_path).map_err(|e| e.to_string())?;
-    for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                bottles.push(name.to_string());
-            }
-        }
-    }
-
-    Ok(bottles)
 }

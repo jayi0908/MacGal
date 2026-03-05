@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-mod wine_runner;
+mod runner;
 mod storage;
 
 // --- 统一的搜索结果结构 ---
@@ -363,10 +363,13 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            wine_runner::launch_game,
-            wine_runner::get_crossover_bottles,
+            runner::launch_game,
+            runner::get_crossover_bottles,
             storage::save_instances,
             storage::load_instances,
+            storage::get_scripts,
+            storage::read_script,
+            storage::save_script,
             get_home_dir,
             get_system_fonts,
             fetch_ymgal_news,

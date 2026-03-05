@@ -3,7 +3,7 @@ import { useTheme, ThemeMode } from "../contexts/ThemeContext";
 import { Monitor, Sun, Moon, Type, Image as ImageIcon, FolderOpen, Layout, Cog, Info, Github, Sliders, Search } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { clsx } from "clsx";
 
 type SettingTab = "general" | "global" | "appearance" | "about";
@@ -58,8 +58,16 @@ export function SettingsPage() {
         multiple: false, directory: false, defaultPath: home,
         filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp"] }]
       });
-      if (selected) updateConfig({ customBgImage: selected as string });
+      if (selected && typeof selected === "string") updateConfig({ customBgImage: convertFileSrc(selected) });
     } catch (e) { console.error(e); }
+  };
+
+  const getBgSrc = (src: string) => {
+    if (!src) return '';
+    // 如果已经是 http 或 tauri asset 协议，直接返回
+    if (src.startsWith('http') || src.startsWith('asset://') || src.startsWith('data:')) return src;
+    // 如果用户手动粘贴了绝对路径 /Users/... ，在此处实时转换
+    return convertFileSrc(src);
   };
 
   const handleSelectFolder = async (key: 'crossoverPath' | 'bottlesPath' | 'pdPath') => {
@@ -323,12 +331,13 @@ export function SettingsPage() {
               <div className="space-y-2 pt-2">
                 <span className={clsx("text-xs", currentTheme === 'dark' ? "text-white/40" : "text-gray-400")}>全局默认背景</span>
                 <div className="flex gap-2">
-                  <input type="text" value={config.customBgImage} onChange={(e) => updateConfig({ customBgImage: e.target.value })} placeholder="https://... 或 本地路径" className={inputClass} />
+                  <input type="text" value={config.customBgImage || ''} onChange={(e) => updateConfig({ customBgImage: e.target.value })} placeholder="https://... 或 本地绝对路径" className={inputClass} />
                   <button onClick={handleSelectBg} className="p-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500"><FolderOpen size={18} /></button>
                 </div>
                 {config.customBgImage && (
                   <div className="mt-2 h-32 w-full rounded-lg overflow-hidden border border-white/10 relative group bg-black/50">
-                     <img src={config.customBgImage.startsWith('http') ? config.customBgImage : `file://${config.customBgImage}`} className="w-full h-full object-cover" />
+                     {/* 废弃错误的 file://，改用 getBgSrc() */}
+                     <img src={getBgSrc(config.customBgImage)} className="w-full h-full object-cover" />
                      <button onClick={() => updateConfig({ customBgImage: "" })} className="absolute top-2 right-2 bg-black/60 hover:bg-red-500 p-1 px-3 rounded-full text-white text-xs opacity-0 group-hover:opacity-100 transition-all backdrop-blur">清除</button>
                   </div>
                 )}

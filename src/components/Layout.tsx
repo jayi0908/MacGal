@@ -1,4 +1,3 @@
-// src/components/Layout.tsx
 import { ReactNode, useEffect, useState } from "react";
 import { Search, Settings, RefreshCw, Play, Box, Compass } from "lucide-react";
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -28,17 +27,25 @@ export function Layout({
 }: LayoutProps) {
     const { config, currentTheme } = useTheme();
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const resolveImage = (src: string) => {
+      if (!src) return '';
+      // 如果已经是合法网络协议、Tauri 安全协议，或是 Base64，直接返回
+      if (src.startsWith('http') || src.startsWith('asset://') || src.startsWith('data:')) {
+        return src;
+      }
+      // 否则说明是用户手动填写的本地绝对路径，进行转换
+      return convertFileSrc(src);
+    };
 
     // 计算背景图
     const getBgImage = () => {
       if (config.useInstanceBg && currentInstance?.backgroundImage) {
-          const bg = currentInstance.backgroundImage;
-          return bg.startsWith('http') ? bg : convertFileSrc(bg);
+          return resolveImage(currentInstance.backgroundImage);
       }
       if (config.customBgImage) {
-          return config.customBgImage.startsWith('http') ? config.customBgImage : convertFileSrc(config.customBgImage);
+          return resolveImage(config.customBgImage);
       }
-      return bgImage || "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=2568";
+      return resolveImage(bgImage || "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=2568");
     };
 
     const isDark = currentTheme === 'dark';
