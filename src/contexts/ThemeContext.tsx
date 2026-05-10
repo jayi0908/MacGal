@@ -17,6 +17,8 @@ export interface AppConfig {
   defaultBottle: string;
   pdPath: string; // PD 虚拟机本地路径
   defaultPdVm: string;  // 默认虚拟机 Applications 目录名称
+  defaultDiskGameRoot: string; // 默认硬盘游戏根目录
+  defaultLocalGameRoot: string; // 默认本机游戏根目录
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -31,6 +33,8 @@ const DEFAULT_CONFIG: AppConfig = {
   defaultBottle: "Default",
   pdPath: "~/Applications (Parallels)",
   defaultPdVm: "",
+  defaultDiskGameRoot: "",
+  defaultLocalGameRoot: "",
 };
 
 interface ThemeContextType {

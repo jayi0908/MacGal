@@ -6,7 +6,7 @@
 
 MacGal 是一款专为 macOS 设计的 galgame/视觉小说管理器，主要管理通过 CrossOver 与 Parallels Desktop 运行的游戏实例，旨在补全 galgame 管理器在 macOS 平台的空白。
 
-目前更新至 0.2.0 版本，实现了添加实例、批量导入游戏与启动游戏的基本功能，支持基本的搜索功能，数据来源为 [touchgal](https://touchgal.top) 和 [kungal](https://kungal.com)，未来会持续完善。
+目前更新至 0.3.0 版本，添加了 Parallels Desktop 与 macOS 原生 .app 启动实例的支持，并添加了实例的终止与迁移功能。
 
 ## 下载与安装
 
@@ -51,9 +51,10 @@ pnpm tauri build
 
 ## 灵感来源 & 致谢
 
+- [touchgal](https://touchgal.top) 和 [kungal](https://kungal.com) - 提供了丰富的游戏数据
 - [ReinaManager](https://github.com/huoshen80/ReinaManager) 与 [LunaBox](https://github.com/Saramanda9988/LunaBox) - Windows 平台的轻量化的 galgame 和视觉小说管理工具（看到这个才想搞的 macOS 版本）
 - [Heroic](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher) - 跨平台的游戏启动器，使用 Tauri2 开发，并且支持 mac 端启动 CrossOver 容器内游戏
-- [SJMCL](https://github.com/UNIkeEN/SJMCL) - 跨平台的 Minecraft 启动器，同样使用 Tauri2 开发，借鉴了其布局（<s>真好看吧</s>）
+- [SJMCL](https://github.com/UNIkeEN/SJMCL) - 跨平台的 Minecraft 启动器，同样使用 Tauri2 开发，借鉴了其布局
 - <s>[Gemini](https://gemini.google.com/) - 伟大的前后端开发者</s>
 
 ## License

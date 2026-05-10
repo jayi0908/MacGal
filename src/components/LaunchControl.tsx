@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, ArrowLeftRight, Play, Box, History, Clock } from "lucide-react";
+import { Settings, ArrowLeftRight, Play, Box, History, Clock, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { clsx } from "clsx";
 import { GameInstance } from "./InstancesPage";
@@ -8,10 +8,11 @@ import { useTheme } from "../contexts/ThemeContext";
 interface LaunchControlProps {
   instances: GameInstance[];
   onLaunch: (instance: GameInstance) => void;
-  onGoToSettings: () => void; // 新增：跳转到实例页面的回调
+  onGoToSettings: (instance: GameInstance) => void; // 跳转到当前实例设置
+  onStop: (instance: GameInstance) => void;
 }
 
-export function LaunchControl({ instances, onLaunch, onGoToSettings }: LaunchControlProps) {
+export function LaunchControl({ instances, onLaunch, onGoToSettings, onStop }: LaunchControlProps) {
   const { currentTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   // 简单起见，首页默认选第一个，或者你可以从 localStorage 读取上次选的
@@ -41,6 +42,18 @@ export function LaunchControl({ instances, onLaunch, onGoToSettings }: LaunchCon
     if (!inst || !inst.playHistory) return 0;
     const todayKey = new Date().toLocaleDateString("en-CA");
     return inst.playHistory[todayKey] || 0;
+  };
+
+  const handleStopInstance = () => {
+    if (currentInstance) {
+      onStop(currentInstance);
+    }
+  };
+
+  const handleOpenCurrentSettings = () => {
+    if (currentInstance) {
+      onGoToSettings(currentInstance);
+    }
   };
 
   if (!currentInstance) return null;
@@ -151,8 +164,9 @@ export function LaunchControl({ instances, onLaunch, onGoToSettings }: LaunchCon
               </button>
 
               <div className="absolute top-2 right-2 flex gap-1 bg-black/20 backdrop-blur rounded-lg p-0.5 border border-white/5 transition-opacity duration-200">
-                  <ToolBtn icon={<Settings size={12} />} onClick={onGoToSettings} />
+                  <ToolBtn icon={<Settings size={12} />} onClick={handleOpenCurrentSettings} />
                   <ToolBtn icon={<ArrowLeftRight size={12} />} onClick={() => setIsOpen(!isOpen)} active={isOpen} />
+                  <ToolBtn icon={<Square size={12} />} onClick={handleStopInstance} />
               </div>
             </div>
           </div>

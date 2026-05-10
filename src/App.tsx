@@ -14,6 +14,8 @@ const INITIAL_INSTANCES: GameInstance[] = [];
 function AppContent() {
   const [activeTab, setActiveTab] = useState<"home" | "instances" | "discovery" | "settings">("home");
   const [instances, setInstances] = useState<GameInstance[]>([]);
+  const [instanceSettingsTargetId, setInstanceSettingsTargetId] = useState<string | null>(null);
+  const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null);
   const { config } = useTheme();
   const { showToast } = useToast();
   const isLoaded = useRef(false);
@@ -133,6 +135,28 @@ function AppContent() {
     }
   };
 
+  const handleStop = async (instance: GameInstance) => {
+    try {
+      const killedPids = await invoke<number[]>("stop_game", {
+        instanceId: instance.id,
+        config: {
+          bottle_path: instance.runMode === 'parallels' ? `${config.pdPath}/${instance.bottleName}` : `${config.bottlesPath}/${instance.bottleName}`,
+          game_exe: instance.executablePath,
+          crossover_app_path: config.crossoverPath,
+          run_mode: instance.runMode || 'crossover'
+        }
+      });
+
+      const pidsText = Array.isArray(killedPids) && killedPids.length > 0
+        ? `: ${killedPids.join(", ")}`
+        : "";
+      showToast(`${instance.name} 已发送终止指令${pidsText}`, "success");
+    } catch (error) {
+      console.error("停止异常:", error);
+      showToast(`${error}`, "error");
+    }
+  };
+
   const currentDisplayInstance = instances.length > 0 ? instances[0] : undefined;
 
   return (
@@ -147,7 +171,12 @@ function AppContent() {
         <LaunchControl 
           instances={instances} 
           onLaunch={handleLaunch} 
-          onGoToSettings={() => setActiveTab("instances")}
+          onGoToSettings={(instance) => {
+            setInstanceSettingsTargetId(instance.id);
+            setFocusInstanceId(instance.id);
+            setActiveTab("instances");
+          }}
+          onStop={handleStop}
         />
       }
     >
@@ -169,6 +198,10 @@ function AppContent() {
           instances={instances} 
           setInstances={handleUpdateInstances} 
           onLaunch={handleLaunch} 
+          settingsTargetId={instanceSettingsTargetId}
+          onConsumeSettingsTarget={() => setInstanceSettingsTargetId(null)}
+          focusInstanceId={focusInstanceId}
+          onConsumeFocusInstance={() => setFocusInstanceId(null)}
         />
       )}
 

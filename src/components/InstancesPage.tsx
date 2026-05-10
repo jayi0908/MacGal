@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Plus, Box, Save, Trash2, FolderOpen, Play, Settings, Search, X, Loader2, ArrowLeft, Image as ImageIcon, ChevronDown, CheckCircle, AlertCircle, FileCode2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Plus, Box, Save, Trash2, FolderOpen, Play, Settings, Search, X, Loader2, ArrowLeft, ArrowLeftRight, Image as ImageIcon, ChevronDown, CheckCircle, AlertCircle, FileCode2, HardDrive, Laptop } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,6 +18,10 @@ export interface GameInstance {
   totalPlayTime?: number;
   playHistory?: Record<string, number>;
   runMode?: 'crossover' | 'parallels' | 'direct';
+  gameFileStatus?: 'disk' | 'local';
+  diskGameRoot?: string;
+  localGameRoot?: string;
+  gameRelativeDir?: string;
 }
 
 interface SearchResult {
@@ -46,11 +50,16 @@ interface InstancesPageProps {
   instances: GameInstance[];
   setInstances: (instances: GameInstance[]) => void;
   onLaunch: (instance: GameInstance) => void;
+  settingsTargetId?: string | null;
+  onConsumeSettingsTarget?: () => void;
+  focusInstanceId?: string | null;
+  onConsumeFocusInstance?: () => void;
 }
 
 type ImportState = 'none' | 'choice' | 'search_params' | 'search_results' | 'manual_form';
+type GameFileStatus = 'disk' | 'local';
 
-export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPageProps) {
+export function InstancesPage({ instances, setInstances, onLaunch, settingsTargetId, onConsumeSettingsTarget, focusInstanceId, onConsumeFocusInstance }: InstancesPageProps) {
   const { config } = useTheme();
   const { showToast } = useToast();
   
@@ -71,6 +80,9 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
   const [isBatchMatching, setIsBatchMatching] = useState(false);
   const [editingBatchItemId, setEditingBatchItemId] = useState<string | null>(null);
+  const [isGameFileStatusOpen, setIsGameFileStatusOpen] = useState(false);
+  const [isMigratingGameFiles, setIsMigratingGameFiles] = useState(false);
+  const cardsContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [scriptModal, setScriptModal] = useState<{
     isOpen: boolean;
@@ -98,6 +110,179 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
   useEffect(() => {
     fetchContainers();
   }, [config.bottlesPath, config.pdPath]);
+
+  useEffect(() => {
+    if (!settingsTargetId) return;
+    const target = instances.find(i => i.id === settingsTargetId);
+    if (target) {
+      setFormData({
+        ...target,
+        diskGameRoot: target.diskGameRoot || config.defaultDiskGameRoot || '',
+        localGameRoot: target.localGameRoot || config.defaultLocalGameRoot || '',
+      });
+      setSelectedId(target.id);
+      setImportState('none');
+      setIsGameFileStatusOpen(false);
+    }
+    if (onConsumeSettingsTarget) {
+      onConsumeSettingsTarget();
+    }
+  }, [settingsTargetId, instances, onConsumeSettingsTarget, config.defaultDiskGameRoot, config.defaultLocalGameRoot]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSelectedId(null);
+        setImportState('none');
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedId]);
+
+  const normalizePath = (path: string) => path.replace(/\/+$/, '');
+
+  const getActiveGameRootByStatus = (inst: Partial<GameInstance>) => {
+    if (inst.gameFileStatus === 'disk') return inst.diskGameRoot || '';
+    if (inst.gameFileStatus === 'local') return inst.localGameRoot || '';
+    return '';
+  };
+
+  const getStatusLabel = (status?: 'disk' | 'local') => {
+    if (status === 'disk') return '硬盘';
+    if (status === 'local') return '本机';
+    return '未知';
+  };
+
+  const toSubPath = (childAbs: string, rootAbs: string) => {
+    const rootNormalized = normalizePath(rootAbs.replace(/\\/g, '/'));
+    const childNormalized = normalizePath(childAbs.replace(/\\/g, '/'));
+    if (childNormalized === rootNormalized) return '';
+    const rootPrefix = `${rootNormalized}/`;
+    if (!childNormalized.startsWith(rootPrefix)) return null;
+    return childNormalized.slice(rootPrefix.length);
+  };
+
+  const validateMigrationBase = (inst: Partial<GameInstance>) => {
+    if (!inst.gameFileStatus) {
+      return "需先设置当前游戏文件状态";
+    }
+
+    const execPath = (inst.executablePath || '').trim();
+    if (!execPath) {
+      return "需先设置好游戏文件状态与路径";
+    }
+
+    if (!inst.diskGameRoot || !inst.localGameRoot) {
+      return "需先设置硬盘与本机游戏根目录";
+    }
+
+    if (!(inst.gameRelativeDir || '').trim()) {
+      return "需先设置游戏文件相对目录";
+    }
+
+    return null;
+  };
+
+  const handleSelectRelativeDir = async () => {
+    const currentStatus = formData.gameFileStatus;
+    if (!currentStatus) {
+      showToast("未设置当前游戏文件状态", "error");
+      return;
+    }
+
+    const activeRoot = getActiveGameRootByStatus(formData);
+    if (!activeRoot) {
+      showToast("未设置当前状态对应的游戏根目录", "error");
+      return;
+    }
+
+    try {
+      const selected = await open({ directory: true, multiple: false, defaultPath: activeRoot });
+      if (!selected || typeof selected !== 'string') return;
+
+      const relative = toSubPath(selected, activeRoot);
+      if (relative === null) {
+        showToast("所选择的游戏目录并非游戏根目录的子目录", "error");
+        return;
+      }
+
+      setFormData(prev => ({ ...prev, gameRelativeDir: relative }));
+      showToast("已设置游戏文件相对目录", "success");
+    } catch (e) {
+      showToast(`选择目录失败: ${e}`, "error");
+    }
+  };
+
+  const handleMigrateGameFiles = async () => {
+    const instanceError = validateMigrationBase(formData);
+    if (instanceError) {
+      showToast(instanceError, "error");
+      return;
+    }
+
+    if (!selectedId || !formData.gameFileStatus || !formData.diskGameRoot || !formData.localGameRoot || !formData.gameRelativeDir || !formData.executablePath) {
+      showToast("当前实例信息不完整，无法迁移", "error");
+      return;
+    }
+
+    const payloadSnapshot = {
+      instanceId: selectedId,
+      gameFileStatus: formData.gameFileStatus as GameFileStatus,
+      diskGameRoot: formData.diskGameRoot,
+      localGameRoot: formData.localGameRoot,
+      gameRelativeDir: formData.gameRelativeDir,
+      executablePath: formData.executablePath,
+    };
+
+    setIsMigratingGameFiles(true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    try {
+      const result = await invoke<{
+        new_executable_path: string;
+        new_status: GameFileStatus;
+      }>("migrate_game_files", {
+        payload: {
+          instance_id: payloadSnapshot.instanceId,
+          game_file_status: payloadSnapshot.gameFileStatus,
+          disk_game_root: payloadSnapshot.diskGameRoot,
+          local_game_root: payloadSnapshot.localGameRoot,
+          game_relative_dir: payloadSnapshot.gameRelativeDir,
+          executable_path: payloadSnapshot.executablePath,
+        }
+      });
+
+      const updatedFormData: Partial<GameInstance> = {
+        ...formData,
+        executablePath: result.new_executable_path,
+        gameFileStatus: result.new_status,
+      };
+      setFormData(updatedFormData);
+
+      const newInstance = {
+        ...updatedFormData,
+        runMode: updatedFormData.runMode || 'crossover',
+        bottleName: updatedFormData.bottleName || (updatedFormData.runMode === 'parallels' ? (config.defaultPdVm || '') : (updatedFormData.runMode === 'crossover' ? (config.defaultBottle || 'Default') : ''))
+      } as GameInstance;
+
+      const newInstances = instances.find(i => i.id === newInstance.id)
+        ? instances.map(i => i.id === newInstance.id ? newInstance : i)
+        : [...instances, newInstance];
+
+      setInstances(newInstances);
+      setImportState('none');
+      setSelectedId(null);
+      showToast("游戏文件迁移成功，已自动保存", "success");
+    } catch (e) {
+      showToast(`${e}`, "error");
+    } finally {
+      setIsMigratingGameFiles(false);
+    }
+  };
 
   const fetchContainers = async () => {
     try {
@@ -335,6 +520,30 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
 
   const isEditing = selectedId !== null || importState === 'manual_form';
 
+  useEffect(() => {
+    if (!selectedId) return;
+    setFormData(prev => ({
+      ...prev,
+      diskGameRoot: prev.diskGameRoot || config.defaultDiskGameRoot || '',
+      localGameRoot: prev.localGameRoot || config.defaultLocalGameRoot || '',
+    }));
+  }, [selectedId, config.defaultDiskGameRoot, config.defaultLocalGameRoot]);
+
+  useEffect(() => {
+    if (!focusInstanceId || isEditing) return;
+    const container = cardsContainerRef.current;
+    if (!container) {
+      if (onConsumeFocusInstance) onConsumeFocusInstance();
+      return;
+    }
+
+    const target = container.querySelector<HTMLElement>(`[data-instance-id="${focusInstanceId}"]`);
+    if (target) {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    if (onConsumeFocusInstance) onConsumeFocusInstance();
+  }, [focusInstanceId, isEditing, onConsumeFocusInstance, instances]);
+
   return (
     <div className="h-full flex flex-col relative">
       {/* ===== 主视图区域 ===== */}
@@ -344,7 +553,14 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
             <ArrowLeft size={20} /> 返回
           </button>
           <div className="max-w-3xl mx-auto space-y-6">
-            <h2 className="text-2xl font-bold mb-6">{selectedId ? "编辑实例" : "配置实例信息"}</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">{selectedId ? "编辑实例" : "配置实例信息"}</h2>
+              {selectedId && (
+                <div className="px-3 py-1.5 rounded-lg text-sm border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5">
+                  游戏文件状态：{getStatusLabel(formData.gameFileStatus)}
+                </div>
+              )}
+            </div>
             
             <div>
               <label className="block text-sm font-medium mb-2">封面横幅 (Banner URL)</label>
@@ -471,6 +687,125 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
               </div>
             </div>
 
+            {formData.runMode === 'crossover' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="min-w-0">
+                  <label className="block text-sm font-medium mb-2 truncate">硬盘游戏根目录</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={formData.diskGameRoot || ''}
+                      onChange={e => setFormData({ ...formData, diskGameRoot: e.target.value })}
+                      className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none"
+                      placeholder="例如 /Volumes/xxx/games"
+                    />
+                    <button
+                      onClick={async () => {
+                        const selected = await open({ directory: true, defaultPath: formData.diskGameRoot || config.defaultDiskGameRoot || undefined });
+                        if (selected && typeof selected === 'string') {
+                          setFormData({ ...formData, diskGameRoot: selected });
+                        }
+                      }}
+                      className="px-4 py-2 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
+                    >
+                      <FolderOpen size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <label className="block text-sm font-medium mb-2 truncate">本机游戏根目录</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={formData.localGameRoot || ''}
+                      onChange={e => setFormData({ ...formData, localGameRoot: e.target.value })}
+                      className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none"
+                      placeholder="例如 ~/games"
+                    />
+                    <button
+                      onClick={async () => {
+                        const selected = await open({ directory: true, defaultPath: formData.localGameRoot || config.defaultLocalGameRoot || undefined });
+                        if (selected && typeof selected === 'string') {
+                          setFormData({ ...formData, localGameRoot: selected });
+                        }
+                      }}
+                      className="px-4 py-2 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
+                    >
+                      <FolderOpen size={20} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="min-w-0">
+                  <label className="block text-sm font-medium mb-2 truncate">游戏文件相对目录</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={formData.gameRelativeDir || ''}
+                      onChange={e => setFormData({ ...formData, gameRelativeDir: e.target.value })}
+                      className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none"
+                      placeholder="例如 CLANNAD"
+                    />
+                    <button
+                      onClick={handleSelectRelativeDir}
+                      className="px-4 py-2 bg-black/5 dark:bg-white/10 rounded-lg hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
+                    >
+                      <FolderOpen size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <label className="block text-sm font-medium mb-2 truncate">设置当前游戏文件状态</label>
+                  <div className="border border-black/10 dark:border-white/10 rounded-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setIsGameFileStatusOpen(!isGameFileStatusOpen)}
+                      className="w-full text-left p-3 bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 transition-colors flex justify-between items-center"
+                    >
+                      <span className="font-medium">{getStatusLabel(formData.gameFileStatus)}</span>
+                      <ChevronDown className={`transition-transform duration-300 ${isGameFileStatusOpen ? 'rotate-180' : ''}`} size={18} />
+                    </button>
+                    <AnimatePresence>
+                      {isGameFileStatusOpen && (
+                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
+                          <div className="p-2 border-t border-black/10 dark:border-white/10 space-y-1">
+                            <button
+                              type="button"
+                              onClick={() => { setFormData({ ...formData, gameFileStatus: 'disk' }); setIsGameFileStatusOpen(false); }}
+                              className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left"
+                            >
+                              <HardDrive size={16} /> 硬盘
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setFormData({ ...formData, gameFileStatus: 'local' }); setIsGameFileStatusOpen(false); }}
+                              className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left"
+                            >
+                              <Laptop size={16} /> 本机
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <button
+                  onClick={handleMigrateGameFiles}
+                  disabled={isMigratingGameFiles}
+                  className="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+                >
+                  {isMigratingGameFiles ? <Loader2 size={18} className="animate-spin" /> : <ArrowLeftRight size={18} />}
+                  进行迁移
+                </button>
+              </div>
+            </>
+            )}
+
             <div>
               <label className="block text-sm font-medium mb-2">版本备注 (Info)</label>
               <textarea rows={3} placeholder="填写一些备注信息..." value={formData.info || ''} onChange={e => setFormData({ ...formData, info: e.target.value })} className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-4 py-2 outline-none resize-none" />
@@ -517,9 +852,9 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                 <p>目前还没有任何实例，点击右上角导入吧！</p>
               </div>
             ) : (
-              <div className="grid grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+              <div ref={cardsContainerRef} className="grid grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                 {instances.map(inst => (
-                  <div key={inst.id} className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-xl bg-white dark:bg-[#252525] border border-black/5 dark:border-white/5 transition-all duration-300 hover:-translate-y-1">
+                  <div data-instance-id={inst.id} key={inst.id} className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-xl bg-white dark:bg-[#252525] border border-black/5 dark:border-white/5 transition-all duration-300 hover:-translate-y-1">
                     <div className="aspect-[3/4] relative bg-black/5 dark:bg-black/50 overflow-hidden">
                       {inst.backgroundImage ? (
                         <img src={inst.backgroundImage} className="w-full h-full object-cover transition-all duration-300 group-hover:blur-sm group-hover:scale-105 group-hover:brightness-50" alt={inst.name} />
@@ -528,13 +863,13 @@ export function InstancesPage({ instances, setInstances, onLaunch }: InstancesPa
                       )}
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 gap-4">
                         <button onClick={(e) => { e.stopPropagation(); onLaunch(inst); }} className="p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 hover:scale-110 transition-all shadow-lg"><Play size={24} className="ml-1" /></button>
-                        <button onClick={(e) => { e.stopPropagation(); setFormData(inst); setSelectedId(inst.id); }} className="p-3 bg-white/20 backdrop-blur-md text-white rounded-full hover:bg-white/30 hover:scale-110 transition-all shadow-lg"><Settings size={24} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setFormData({ ...inst, diskGameRoot: inst.diskGameRoot || config.defaultDiskGameRoot || '', localGameRoot: inst.localGameRoot || config.defaultLocalGameRoot || '' }); setSelectedId(inst.id); }} className="p-3 bg-white/20 backdrop-blur-md text-white rounded-full hover:bg-white/30 hover:scale-110 transition-all shadow-lg"><Settings size={24} /></button>
                       </div>
                     </div>
                     <div className="p-4">
                       <h3 className="font-semibold text-[15px] truncate text-gray-800 dark:text-gray-200" title={inst.name}>{inst.name}</h3>
                       <p className="text-xs text-gray-500 truncate mt-1">
-                        {inst.runMode === 'parallels' ? 'PD: ' : (inst.runMode === 'direct' ? 'Direct: ' : 'CX: ')}
+                        {inst.runMode === 'parallels' ? 'PD: ' : (inst.runMode === 'direct' ? 'Direct: ' : 'CrossOver: ')}
                         {inst.bottleName || (inst.runMode === 'direct' ? '无前置' : '')}
                       </p>
                     </div>

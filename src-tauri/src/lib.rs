@@ -4,6 +4,7 @@ use font_kit::source::SystemSource;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fs;
 
 mod runner;
 mod storage;
@@ -20,6 +21,7 @@ struct SearchResult {
 }
 
 // --- TouchGal 辅助结构 ---
+#[allow(non_snake_case)]
 #[derive(Serialize)]
 struct TouchGalSearchOption {
     searchInIntroduction: bool,
@@ -27,6 +29,7 @@ struct TouchGalSearchOption {
     searchInTag: bool,
 }
 
+#[allow(non_snake_case)]
 #[derive(Serialize)]
 struct TouchGalRequestBody {
     queryString: String,
@@ -46,6 +49,23 @@ struct TouchGalRequestBody {
 struct GameDirInfo {
     dir_name: String,
     executables: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct MigrateGameFilesPayload {
+    instance_id: String,
+    game_file_status: String,
+    disk_game_root: String,
+    local_game_root: String,
+    game_relative_dir: String,
+    executable_path: String,
+}
+
+#[derive(Serialize)]
+struct MigrateGameFilesResult {
+    new_executable_path: String,
+    new_status: String,
 }
 
 fn expand_tilde(path_str: &str) -> PathBuf {
@@ -355,6 +375,106 @@ fn get_pd_vms(path: String) -> Vec<String> {
     vms
 }
 
+fn normalize_path(mut p: PathBuf) -> PathBuf {
+    while p.to_string_lossy().ends_with('/') && p != PathBuf::from("/") {
+        p.pop();
+    }
+    p
+}
+
+fn move_dir_cross_device(src: &Path, dst: &Path) -> Result<(), String> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("创建目标目录失败: {}", e))?;
+    }
+
+    match fs::rename(src, dst) {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            // 跨设备时走 cp -R 再删源目录
+            let status = std::process::Command::new("cp")
+                .arg("-a")
+                .arg(src)
+                .arg(dst)
+                .status()
+                .map_err(|e| format!("复制游戏目录失败: {}", e))?;
+
+            if !status.success() {
+                return Err("复制游戏目录失败".to_string());
+            }
+
+            fs::remove_dir_all(src).map_err(|e| format!("删除源目录失败: {}", e))?;
+            Ok(())
+        }
+    }
+}
+
+#[command]
+async fn migrate_game_files(payload: MigrateGameFilesPayload) -> Result<MigrateGameFilesResult, String> {
+    let _instance_id = payload.instance_id;
+    let status = payload.game_file_status.as_str();
+    if status != "disk" && status != "local" {
+        return Err("无效的游戏文件状态".to_string());
+    }
+
+    let disk_root = normalize_path(expand_tilde(&payload.disk_game_root));
+    let local_root = normalize_path(expand_tilde(&payload.local_game_root));
+
+    if !disk_root.exists() || !disk_root.is_dir() {
+        return Err(format!("硬盘游戏根目录无法访问: {}", disk_root.to_string_lossy()));
+    }
+    if !local_root.exists() || !local_root.is_dir() {
+        return Err(format!("本机游戏根目录无法访问: {}", local_root.to_string_lossy()));
+    }
+
+    let rel_dir = payload
+        .game_relative_dir
+        .trim()
+        .trim_start_matches('/')
+        .trim_start_matches('\\')
+        .replace('\\', "/");
+    if rel_dir.is_empty() {
+        return Err("游戏文件相对目录为空".to_string());
+    }
+
+    let current_root = if status == "disk" { &disk_root } else { &local_root };
+    let target_root = if status == "disk" { &local_root } else { &disk_root };
+
+    let src_game_dir = normalize_path(current_root.join(&rel_dir));
+    let dst_game_dir = normalize_path(target_root.join(&rel_dir));
+
+    if !src_game_dir.exists() || !src_game_dir.is_dir() {
+        return Err(format!("源游戏目录不存在: {}", src_game_dir.to_string_lossy()));
+    }
+    if dst_game_dir.exists() {
+        return Err(format!("目标目录已存在: {}", dst_game_dir.to_string_lossy()));
+    }
+
+    let exec_path = normalize_path(expand_tilde(&payload.executable_path));
+    let exec_parent = exec_path
+        .parent()
+        .ok_or("无法解析可执行文件所在目录")?
+        .to_path_buf();
+
+    if !exec_parent.starts_with(&src_game_dir) {
+        return Err("当前可执行文件路径不在对应游戏目录下".to_string());
+    }
+
+    let exec_rel_from_game_dir = exec_path
+        .strip_prefix(&src_game_dir)
+        .map_err(|_| "无法计算可执行文件相对路径".to_string())?
+        .to_path_buf();
+
+    move_dir_cross_device(&src_game_dir, &dst_game_dir)?;
+
+    let new_exec_path = normalize_path(dst_game_dir.join(exec_rel_from_game_dir));
+    let new_status = if status == "disk" { "local" } else { "disk" };
+
+    Ok(MigrateGameFilesResult {
+        new_executable_path: new_exec_path.to_string_lossy().to_string(),
+        new_status: new_status.to_string(),
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -364,6 +484,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             runner::launch_game,
+            runner::stop_game,
             runner::get_crossover_bottles,
             storage::save_instances,
             storage::load_instances,
@@ -376,7 +497,8 @@ pub fn run() {
             search_game,
             get_directory_keywords,
             scan_game_directories,
-            get_pd_vms
+            get_pd_vms,
+            migrate_game_files
         ])
         .setup(|app| {
             // 获取主窗口

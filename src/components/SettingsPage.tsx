@@ -70,7 +70,7 @@ export function SettingsPage() {
     return convertFileSrc(src);
   };
 
-  const handleSelectFolder = async (key: 'crossoverPath' | 'bottlesPath' | 'pdPath') => {
+  const handleSelectFolder = async (key: 'crossoverPath' | 'bottlesPath' | 'pdPath' | 'defaultDiskGameRoot' | 'defaultLocalGameRoot') => {
      try {
       const home = await getHomePath();
       const defaultPath = key === 'crossoverPath' ? '/Applications' : home;
@@ -182,6 +182,22 @@ export function SettingsPage() {
                   <div className="flex gap-2">
                     <input type="text" value={config.pdPath} onChange={(e) => updateConfig({ pdPath: e.target.value })} className={inputClass} />
                     <button onClick={() => handleSelectFolder('pdPath')} className="p-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500"><FolderOpen size={18} /></button>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className={labelClass}>默认硬盘游戏根目录</label>
+                  <div className="flex gap-2">
+                    <input type="text" value={config.defaultDiskGameRoot} onChange={(e) => updateConfig({ defaultDiskGameRoot: e.target.value })} className={inputClass} />
+                    <button onClick={() => handleSelectFolder('defaultDiskGameRoot')} className="p-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500"><FolderOpen size={18} /></button>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className={labelClass}>默认本机游戏根目录</label>
+                  <div className="flex gap-2">
+                    <input type="text" value={config.defaultLocalGameRoot} onChange={(e) => updateConfig({ defaultLocalGameRoot: e.target.value })} className={inputClass} />
+                    <button onClick={() => handleSelectFolder('defaultLocalGameRoot')} className="p-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500"><FolderOpen size={18} /></button>
                   </div>
                 </div>
               </div>
@@ -363,7 +379,7 @@ export function SettingsPage() {
                    <div>
                      <h2 className={clsx("text-4xl font-bold tracking-tight", isDark ? "text-white" : "text-gray-900")}>MacGal</h2>
                      <p className={clsx("text-sm mt-1", isDark ? "text-white/50" : "text-gray-500")}>
-                       Version 0.2.0
+                       Version 0.3.0
                      </p>
                    </div>
                    
