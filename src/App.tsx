@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Layout } from "./components/Layout";
 import { LaunchControl } from "./components/LaunchControl";
 import { InstancesPage, GameInstance } from "./components/InstancesPage";
@@ -19,6 +19,10 @@ function AppContent() {
   const { config } = useTheme();
   const { showToast } = useToast();
   const isLoaded = useRef(false);
+  const [dryRunActive, setDryRunActive] = useState(false);
+  const [dryRunInstanceId, setDryRunInstanceId] = useState<string | null>(null);
+  const dryRunIntervalRef = useRef<number | null>(null);
+  const dryRunStartRef = useRef<number>(0);
 
   // 辅助函数：对实例列表进行排序（最近启动的在最前，然后是新建的）
   const sortInstances = (list: GameInstance[]) => {
@@ -69,6 +73,99 @@ function AppContent() {
     } catch (e) { console.error(e); }
   };
 
+  const saveInstancesSnapshot = useCallback((list: GameInstance[]) => {
+    invoke("save_instances", { data: JSON.stringify(list, null, 2) }).catch((e) => console.error(e));
+  }, []);
+
+  const handleToggleDryRun = useCallback((instanceId: string) => {
+    if (dryRunActive && dryRunInstanceId === instanceId) {
+      if (dryRunIntervalRef.current !== null) {
+        clearInterval(dryRunIntervalRef.current);
+        dryRunIntervalRef.current = null;
+      }
+      const elapsed = Math.floor((Date.now() - dryRunStartRef.current) / 1000);
+      setInstances((prev) => {
+        const todayKey = new Date().toLocaleDateString("en-CA");
+        const newInstances = prev.map((inst) => {
+          if (inst.id === instanceId) {
+            const currentHistory = inst.playHistory || {};
+            return {
+              ...inst,
+              totalPlayTime: (inst.totalPlayTime || 0) + elapsed,
+              playHistory: { ...currentHistory, [todayKey]: (currentHistory[todayKey] || 0) + elapsed },
+            };
+          }
+          return inst;
+        });
+        saveInstancesSnapshot(newInstances);
+        return newInstances;
+      });
+      setDryRunActive(false);
+      setDryRunInstanceId(null);
+    } else if (dryRunActive && dryRunInstanceId !== instanceId) {
+      if (dryRunIntervalRef.current !== null) {
+        clearInterval(dryRunIntervalRef.current);
+        dryRunIntervalRef.current = null;
+      }
+      const elapsed = Math.floor((Date.now() - dryRunStartRef.current) / 1000);
+      const prevInstanceId = dryRunInstanceId;
+      setInstances((prev) => {
+        const todayKey = new Date().toLocaleDateString("en-CA");
+        let newInstances = prev.map((inst) => {
+          if (inst.id === prevInstanceId) {
+            const currentHistory = inst.playHistory || {};
+            return {
+              ...inst,
+              totalPlayTime: (inst.totalPlayTime || 0) + elapsed,
+              playHistory: { ...currentHistory, [todayKey]: (currentHistory[todayKey] || 0) + elapsed },
+            };
+          }
+          return inst;
+        });
+        saveInstancesSnapshot(newInstances);
+        return newInstances;
+      });
+      dryRunStartRef.current = Date.now();
+      setDryRunInstanceId(instanceId);
+      dryRunIntervalRef.current = window.setInterval(() => {
+        setInstances((prev) => {
+          const todayKey = new Date().toLocaleDateString("en-CA");
+          return prev.map((inst) => {
+            if (inst.id === instanceId) {
+              const currentHistory = inst.playHistory || {};
+              return {
+                ...inst,
+                totalPlayTime: (inst.totalPlayTime || 0) + 1,
+                playHistory: { ...currentHistory, [todayKey]: (currentHistory[todayKey] || 0) + 1 },
+              };
+            }
+            return inst;
+          });
+        });
+      }, 1000);
+    } else {
+      dryRunStartRef.current = Date.now();
+      setDryRunActive(true);
+      setDryRunInstanceId(instanceId);
+      dryRunIntervalRef.current = window.setInterval(() => {
+        setInstances((prev) => {
+          const todayKey = new Date().toLocaleDateString("en-CA");
+          return prev.map((inst) => {
+            if (inst.id === instanceId) {
+              const currentHistory = inst.playHistory || {};
+              return {
+                ...inst,
+                totalPlayTime: (inst.totalPlayTime || 0) + 1,
+                playHistory: { ...currentHistory, [todayKey]: (currentHistory[todayKey] || 0) + 1 },
+              };
+            }
+            return inst;
+          });
+        });
+      }, 1000);
+    }
+  }, [dryRunActive, dryRunInstanceId, saveInstancesSnapshot]);
+
   useEffect(() => {
     // 定义一个解绑函数
     let unlisten: () => void;
@@ -112,13 +209,20 @@ function AppContent() {
 
   const handleLaunch = async (instance: GameInstance) => {
     try {
+      const isDryRun = dryRunActive && dryRunInstanceId === instance.id;
+      const bottlePath = instance.runMode === 'parallels'
+        ? `${config.pdPath}/${instance.bottleName}`
+        : instance.runMode === 'direct'
+          ? instance.bottleName
+          : `${config.bottlesPath}/${instance.bottleName}`;
       const response = await invoke("launch_game", {
         instanceId: instance.id,
         config: {
-          bottle_path: instance.runMode === 'parallels' ? `${config.pdPath}/${instance.bottleName}` : `${config.bottlesPath}/${instance.bottleName}`,
+          bottle_path: bottlePath,
           game_exe: instance.executablePath,
           crossover_app_path: config.crossoverPath,
-          run_mode: instance.runMode || 'crossover'
+          run_mode: instance.runMode || 'crossover',
+          dry_run_active: isDryRun
         }
       });
       showToast(`${instance.name} 启动成功 (PID: ${response})`, "success");
@@ -137,10 +241,15 @@ function AppContent() {
 
   const handleStop = async (instance: GameInstance) => {
     try {
+      const bottlePath = instance.runMode === 'parallels'
+        ? `${config.pdPath}/${instance.bottleName}`
+        : instance.runMode === 'direct'
+          ? instance.bottleName
+          : `${config.bottlesPath}/${instance.bottleName}`;
       const killedPids = await invoke<number[]>("stop_game", {
         instanceId: instance.id,
         config: {
-          bottle_path: instance.runMode === 'parallels' ? `${config.pdPath}/${instance.bottleName}` : `${config.bottlesPath}/${instance.bottleName}`,
+          bottle_path: bottlePath,
           game_exe: instance.executablePath,
           crossover_app_path: config.crossoverPath,
           run_mode: instance.runMode || 'crossover'
@@ -177,6 +286,9 @@ function AppContent() {
             setActiveTab("instances");
           }}
           onStop={handleStop}
+          dryRunActive={dryRunActive}
+          dryRunInstanceId={dryRunInstanceId}
+          onToggleDryRun={handleToggleDryRun}
         />
       }
     >

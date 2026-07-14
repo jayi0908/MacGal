@@ -13,6 +13,7 @@ pub struct WineConfig {
     pub game_exe: String,
     pub crossover_app_path: String,
     pub run_mode: Option<String>,
+    pub dry_run_active: Option<bool>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -457,73 +458,76 @@ pub async fn launch_game(app: AppHandle, instance_id: String, config: WineConfig
         let pid = child.id();
         let exe_for_track = expand_tilde(&config.game_exe).to_string_lossy().to_string();
         track_running_instance(&instance_id, pid, "parallels", &exe_for_track);
-        let app_handle = app.clone();
-        let i_id = instance_id.clone();
 
-        thread::spawn(move || {
-            let start_time = Instant::now();
-            
-            // 给 Parallels Desktop 启动虚拟机、挂载网络磁盘、以及 Windows 拉起游戏预留 15 秒的缓冲时间
-            thread::sleep(std::time::Duration::from_secs(15));
-            
-            if !vm_name.is_empty() && !exe_name.is_empty() {
-                let mut miss_count = 0;
-                let exe_name_lower = exe_name.to_lowercase();
+        if !config.dry_run_active.unwrap_or(false) {
+            let app_handle = app.clone();
+            let i_id = instance_id.clone();
+
+            thread::spawn(move || {
+                let start_time = Instant::now();
                 
-                // Windows 的 tasklist 命令最多只显示进程名的前 25 个字符，如果太长会被截断
-                let search_name = if exe_name_lower.len() > 25 {
-                    &exe_name_lower[..25]
-                } else {
-                    &exe_name_lower
-                };
-
-                loop {
-                    // 尝试通过 prlctl (Parallels 命令行工具) 直接查看虚拟机内部的进程表
-                    let output = Command::new("/usr/local/bin/prlctl")
-                        .arg("exec")
-                        .arg(&vm_name)
-                        .arg("tasklist")
-                        .output()
-                        .or_else(|_| {
-                            // 降级：如果 /usr/local/bin 里没有，尝试通过全局 PATH 查找
-                            Command::new("prlctl").arg("exec").arg(&vm_name).arg("tasklist").output()
-                        });
-
-                    match output {
-                        Ok(out) => {
-                            let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
-                            if stdout.contains(search_name) {
-                                miss_count = 0; // 找到了游戏进程，重置丢失计数
-                            } else {
-                                miss_count += 1; // 没找到该游戏
-                            }
-                        },
-                        Err(_) => {
-                            // 执行出错 (可能是虚拟机正处于未唤醒状态/挂起状态)
-                            miss_count += 1;
-                        }
-                    }
-
-                    // 如果连续 3 次（15 秒）在 Windows 后台都没看到这个 exe，证明游戏被玩家关闭了
-                    if miss_count >= 3 {
-                        break;
-                    }
+                // 给 Parallels Desktop 启动虚拟机、挂载网络磁盘、以及 Windows 拉起游戏预留 15 秒的缓冲时间
+                thread::sleep(std::time::Duration::from_secs(15));
+                
+                if !vm_name.is_empty() && !exe_name.is_empty() {
+                    let mut miss_count = 0;
+                    let exe_name_lower = exe_name.to_lowercase();
                     
-                    thread::sleep(std::time::Duration::from_secs(5));
-                }
-            } else {
-                // 如果出异常解析不出名字，退化为旧式的 wait（立刻结束）
-                let _ = child.wait();
-            }
+                    // Windows 的 tasklist 命令最多只显示进程名的前 25 个字符，如果太长会被截断
+                    let search_name = if exe_name_lower.len() > 25 {
+                        &exe_name_lower[..25]
+                    } else {
+                        &exe_name_lower
+                    };
 
-            let duration = start_time.elapsed().as_secs();
-            println!("游戏 {} 已退出，总时长: {}秒", i_id, duration);
-            remove_running_instance(&i_id);
-            let _ = app_handle.emit("game-finished", GameFinishedPayload {
-                instance_id: i_id,
-                duration_sec: duration
+                    loop {
+                        // 尝试通过 prlctl (Parallels 命令行工具) 直接查看虚拟机内部的进程表
+                        let output = Command::new("/usr/local/bin/prlctl")
+                            .arg("exec")
+                            .arg(&vm_name)
+                            .arg("tasklist")
+                            .output()
+                            .or_else(|_| {
+                                // 降级：如果 /usr/local/bin 里没有，尝试通过全局 PATH 查找
+                                Command::new("prlctl").arg("exec").arg(&vm_name).arg("tasklist").output()
+                            });
+
+                        match output {
+                            Ok(out) => {
+                                let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
+                                if stdout.contains(search_name) {
+                                    miss_count = 0; // 找到了游戏进程，重置丢失计数
+                                } else {
+                                    miss_count += 1; // 没找到该游戏
+                                }
+                            },
+                            Err(_) => {
+                                // 执行出错 (可能是虚拟机正处于未唤醒状态/挂起状态)
+                                miss_count += 1;
+                            }
+                        }
+
+                        // 如果连续 3 次（15 秒）在 Windows 后台都没看到这个 exe，证明游戏被玩家关闭了
+                        if miss_count >= 3 {
+                            break;
+                        }
+                        
+                        thread::sleep(std::time::Duration::from_secs(5));
+                    }
+                } else {
+                    // 如果出异常解析不出名字，退化为旧式的 wait（立刻结束）
+                    let _ = child.wait();
+                }
+
+                let duration = start_time.elapsed().as_secs();
+                println!("游戏 {} 已退出，总时长: {}秒", i_id, duration);
+                remove_running_instance(&i_id);
+                let _ = app_handle.emit("game-finished", GameFinishedPayload {
+                    instance_id: i_id,
+                    duration_sec: duration
+                });
             });
-        });
+        }
 
         return Ok(pid);
     }
@@ -534,11 +538,24 @@ pub async fn launch_game(app: AppHandle, instance_id: String, config: WineConfig
             let script_path = script_dir.join(format!("{}.sh", config.bottle_path));
             if script_path.exists() {
                 let log_path = "/tmp/macgal_script.log";
-                let _ = Command::new("sh")
+                let log_file = std::fs::File::create(log_path).unwrap();
+                match Command::new("sh")
                     .arg(&script_path)
-                    .stdout(std::fs::File::create(log_path).unwrap())
-                    .stderr(std::fs::File::create(log_path).unwrap())
-                    .status();
+                    .stdout(log_file.try_clone().unwrap())
+                    .stderr(log_file)
+                    .status()
+                {
+                    Ok(status) => {
+                        if !status.success() {
+                            println!("脚本 {:?} 执行失败，退出码: {:?}", script_path, status.code());
+                        } else {
+                            println!("脚本 {:?} 执行成功", script_path);
+                        }
+                    }
+                    Err(e) => {
+                        println!("无法执行脚本 {:?}: {}", script_path, e);
+                    }
+                }
             }
         }
 
@@ -556,20 +573,23 @@ pub async fn launch_game(app: AppHandle, instance_id: String, config: WineConfig
         let pid = child.id();
         let exe_for_track = app_path.to_string_lossy().to_string();
         track_running_instance(&instance_id, pid, "direct", &exe_for_track);
-        let app_handle = app.clone();
-        let i_id = instance_id.clone();
 
-        thread::spawn(move || {
-            let start_time = Instant::now();
-            let _ = child.wait();
-            let duration = start_time.elapsed().as_secs();
-            println!("游戏 {} 已退出，总时长: {}秒", i_id, duration);
-            remove_running_instance(&i_id);
-            let _ = app_handle.emit("game-finished", GameFinishedPayload {
-                instance_id: i_id,
-                duration_sec: duration,
+        if !config.dry_run_active.unwrap_or(false) {
+            let app_handle = app.clone();
+            let i_id = instance_id.clone();
+
+            thread::spawn(move || {
+                let start_time = Instant::now();
+                let _ = child.wait();
+                let duration = start_time.elapsed().as_secs();
+                println!("游戏 {} 已退出，总时长: {}秒", i_id, duration);
+                remove_running_instance(&i_id);
+                let _ = app_handle.emit("game-finished", GameFinishedPayload {
+                    instance_id: i_id,
+                    duration_sec: duration,
+                });
             });
-        });
+        }
 
         return Ok(pid);
     }
@@ -608,25 +628,26 @@ pub async fn launch_game(app: AppHandle, instance_id: String, config: WineConfig
     let exe_for_track = game_path.to_string_lossy().to_string();
     track_running_instance(&instance_id, pid, "crossover", &exe_for_track);
     
-    // 5. 开启后台线程等待游戏结束，计算时长
-    let app_handle = app.clone();
-    let i_id = instance_id.clone();
-    
-    thread::spawn(move || {
-        let start_time = Instant::now();
-        match child.wait() {
-            Ok(status) => {
-                let duration = start_time.elapsed().as_secs();
-                println!("游戏 {} 已退出，状态: {}, 时长: {}秒", i_id, status, duration);
-                remove_running_instance(&i_id);
-                let _ = app_handle.emit("game-finished", GameFinishedPayload {
-                    instance_id: i_id,
-                    duration_sec: duration
-                });
+    if !config.dry_run_active.unwrap_or(false) {
+        let app_handle = app.clone();
+        let i_id = instance_id.clone();
+        
+        thread::spawn(move || {
+            let start_time = Instant::now();
+            match child.wait() {
+                Ok(status) => {
+                    let duration = start_time.elapsed().as_secs();
+                    println!("游戏 {} 已退出，状态: {}, 时长: {}秒", i_id, status, duration);
+                    remove_running_instance(&i_id);
+                    let _ = app_handle.emit("game-finished", GameFinishedPayload {
+                        instance_id: i_id,
+                        duration_sec: duration
+                    });
+                }
+                Err(e) => println!("等待进程失败: {}", e),
             }
-            Err(e) => println!("等待进程失败: {}", e),
-        }
-    });
+        });
+    }
 
     Ok(pid)
 }

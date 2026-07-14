@@ -8,11 +8,14 @@ import { useTheme } from "../contexts/ThemeContext";
 interface LaunchControlProps {
   instances: GameInstance[];
   onLaunch: (instance: GameInstance) => void;
-  onGoToSettings: (instance: GameInstance) => void; // 跳转到当前实例设置
+  onGoToSettings: (instance: GameInstance) => void;
   onStop: (instance: GameInstance) => void;
+  dryRunActive: boolean;
+  dryRunInstanceId: string | null;
+  onToggleDryRun: (instanceId: string) => void;
 }
 
-export function LaunchControl({ instances, onLaunch, onGoToSettings, onStop }: LaunchControlProps) {
+export function LaunchControl({ instances, onLaunch, onGoToSettings, onStop, dryRunActive, dryRunInstanceId, onToggleDryRun }: LaunchControlProps) {
   const { currentTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   // 简单起见，首页默认选第一个，或者你可以从 localStorage 读取上次选的
@@ -69,13 +72,6 @@ export function LaunchControl({ instances, onLaunch, onGoToSettings, onStop }: L
     isDark ? "text-white/90" : "text-gray-800"
   );
 
-  const panelClass = clsx(
-    "relative h-20 rounded-2xl flex flex-col items-center justify-center px-6 transition-all border backdrop-blur-md overflow-hidden min-w-[100px]",
-    isDark 
-      ? "bg-black/60 border-white/10 shadow-lg" 
-      : "bg-white/80 border-white/60 shadow-xl ring-1 ring-black/5"
-  );
-
   return (
     <div className="w-full flex items-end justify-between px-10 pb-8 relative z-30">
         {/* 上次运行 & 总时长 */}
@@ -98,16 +94,47 @@ export function LaunchControl({ instances, onLaunch, onGoToSettings, onStop }: L
 
         <div className="flex items-end gap-3">
           {/* 今日游玩时长 */}
-          <div className={panelClass}>
+          <button
+            onClick={() => currentInstance && onToggleDryRun(currentInstance.id)}
+            title={dryRunActive && dryRunInstanceId === currentInstance?.id ? "关闭 dry run" : "开启 dry run"}
+            className={clsx(
+              "relative h-20 rounded-2xl flex flex-col items-center justify-center px-6 transition-all border backdrop-blur-md overflow-hidden min-w-[100px] cursor-pointer group",
+              dryRunActive && dryRunInstanceId === currentInstance?.id
+                ? (isDark ? "bg-black/60 border-green-500/30 shadow-lg shadow-green-500/10" : "bg-white/80 border-green-500/40 shadow-xl ring-1 ring-green-500/10")
+                : (isDark
+                  ? "bg-black/60 border-white/10 shadow-lg group-hover:border-blue-500/30 group-hover:shadow-blue-500/5"
+                  : "bg-white/80 border-white/60 shadow-xl ring-1 ring-black/5 group-hover:border-blue-500/30")
+            )}
+          >
+            <div className={clsx(
+              "absolute inset-x-0 bottom-0 h-full bg-gradient-to-t opacity-0 group-hover:opacity-100 transition-opacity duration-500",
+              dryRunActive && dryRunInstanceId === currentInstance?.id
+                ? "from-green-600/20 to-transparent"
+                : "from-blue-600/20 to-transparent"
+            )} />
             <span className={clsx("text-xs font-bold uppercase tracking-wider mb-1", isDark ? "text-white/50" : "text-gray-500")}>今日游玩</span>
             <div className="flex items-center gap-2">
-               <Clock size={16} className="text-blue-500" />
-               <span className={clsx("text-xl font-bold font-mono", isDark ? "text-blue-400" : "text-blue-600")}>
+               <Clock size={16} className={clsx(
+                 dryRunActive && dryRunInstanceId === currentInstance?.id
+                   ? "text-green-500 animate-pulse"
+                   : "text-blue-500"
+               )} />
+               <span className={clsx(
+                 "text-xl font-bold font-mono",
+                 dryRunActive && dryRunInstanceId === currentInstance?.id
+                   ? (isDark ? "text-green-400" : "text-green-600")
+                   : (isDark ? "text-blue-400" : "text-blue-600")
+               )}>
                    {formatTime(getDailyTime(currentInstance))}
                </span>
             </div>
-            <div className="absolute inset-x-0 bottom-0 h-1 bg-blue-500/50" />
-          </div>
+            <div className={clsx(
+              "absolute inset-x-0 bottom-0 h-1 transition-colors duration-300",
+              dryRunActive && dryRunInstanceId === currentInstance?.id
+                ? "bg-green-500/50"
+                : "bg-blue-500/50"
+            )} />
+          </button>
 
           {/* 启动按钮组容器 */}
           <div className="relative group">
