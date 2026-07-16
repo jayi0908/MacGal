@@ -22,7 +22,6 @@ function AppContent() {
   const [dryRunActive, setDryRunActive] = useState(false);
   const [dryRunInstanceId, setDryRunInstanceId] = useState<string | null>(null);
   const dryRunIntervalRef = useRef<number | null>(null);
-  const dryRunStartRef = useRef<number>(0);
 
   // 辅助函数：对实例列表进行排序（最近启动的在最前，然后是新建的）
   const sortInstances = (list: GameInstance[]) => {
@@ -83,22 +82,9 @@ function AppContent() {
         clearInterval(dryRunIntervalRef.current);
         dryRunIntervalRef.current = null;
       }
-      const elapsed = Math.floor((Date.now() - dryRunStartRef.current) / 1000);
       setInstances((prev) => {
-        const todayKey = new Date().toLocaleDateString("en-CA");
-        const newInstances = prev.map((inst) => {
-          if (inst.id === instanceId) {
-            const currentHistory = inst.playHistory || {};
-            return {
-              ...inst,
-              totalPlayTime: (inst.totalPlayTime || 0) + elapsed,
-              playHistory: { ...currentHistory, [todayKey]: (currentHistory[todayKey] || 0) + elapsed },
-            };
-          }
-          return inst;
-        });
-        saveInstancesSnapshot(newInstances);
-        return newInstances;
+        saveInstancesSnapshot(prev);
+        return prev;
       });
       setDryRunActive(false);
       setDryRunInstanceId(null);
@@ -107,25 +93,10 @@ function AppContent() {
         clearInterval(dryRunIntervalRef.current);
         dryRunIntervalRef.current = null;
       }
-      const elapsed = Math.floor((Date.now() - dryRunStartRef.current) / 1000);
-      const prevInstanceId = dryRunInstanceId;
       setInstances((prev) => {
-        const todayKey = new Date().toLocaleDateString("en-CA");
-        let newInstances = prev.map((inst) => {
-          if (inst.id === prevInstanceId) {
-            const currentHistory = inst.playHistory || {};
-            return {
-              ...inst,
-              totalPlayTime: (inst.totalPlayTime || 0) + elapsed,
-              playHistory: { ...currentHistory, [todayKey]: (currentHistory[todayKey] || 0) + elapsed },
-            };
-          }
-          return inst;
-        });
-        saveInstancesSnapshot(newInstances);
-        return newInstances;
+        saveInstancesSnapshot(prev);
+        return prev;
       });
-      dryRunStartRef.current = Date.now();
       setDryRunInstanceId(instanceId);
       dryRunIntervalRef.current = window.setInterval(() => {
         setInstances((prev) => {
@@ -144,7 +115,6 @@ function AppContent() {
         });
       }, 1000);
     } else {
-      dryRunStartRef.current = Date.now();
       setDryRunActive(true);
       setDryRunInstanceId(instanceId);
       dryRunIntervalRef.current = window.setInterval(() => {
@@ -166,44 +136,40 @@ function AppContent() {
     }
   }, [dryRunActive, dryRunInstanceId, saveInstancesSnapshot]);
 
+  const gameFinishedGenRef = useRef(0);
+
   useEffect(() => {
-    // 定义一个解绑函数
-    let unlisten: () => void;
+    const generation = ++gameFinishedGenRef.current;
 
-    const setupListener = async () => {
-      unlisten = await listen<{ instance_id: string; duration_sec: number }>("game-finished", (event) => {
-        const { instance_id, duration_sec } = event.payload;
-        console.log(`收到游戏结束事件: ID=${instance_id}, 时长=${duration_sec}s`);
+    const unlistenPromise = listen<{ instance_id: string; duration_sec: number }>("game-finished", (event) => {
+      if (gameFinishedGenRef.current !== generation) return;
+      const { instance_id, duration_sec } = event.payload;
+      console.log(`收到游戏结束事件: ID=${instance_id}, 时长=${duration_sec}s`);
 
-        setInstances((prevInstances) => {
-          const todayKey = new Date().toLocaleDateString("en-CA"); // 格式 YYYY-MM-DD
-          
-          const newInstances = prevInstances.map((inst) => {
-            if (inst.id === instance_id) {
-              const currentHistory = inst.playHistory || {};
-              const todayTime = (currentHistory[todayKey] || 0) + duration_sec;
-              
-              return {
-                ...inst,
-                totalPlayTime: (inst.totalPlayTime || 0) + duration_sec,
-                playHistory: { ...currentHistory, [todayKey]: todayTime },
-              };
-            }
-            return inst;
-          });
-          
-          // 自动保存到本地文件
-          invoke("save_instances", { data: JSON.stringify(newInstances, null, 2) });
-          return newInstances;
+      setInstances((prevInstances) => {
+        const todayKey = new Date().toLocaleDateString("en-CA");
+        
+        const newInstances = prevInstances.map((inst) => {
+          if (inst.id === instance_id) {
+            const currentHistory = inst.playHistory || {};
+            const todayTime = (currentHistory[todayKey] || 0) + duration_sec;
+            
+            return {
+              ...inst,
+              totalPlayTime: (inst.totalPlayTime || 0) + duration_sec,
+              playHistory: { ...currentHistory, [todayKey]: todayTime },
+            };
+          }
+          return inst;
         });
+        
+        invoke("save_instances", { data: JSON.stringify(newInstances, null, 2) });
+        return newInstances;
       });
-    };
+    });
 
-    setupListener();
-
-    // 组件卸载时取消监听
     return () => {
-      if (unlisten) unlisten();
+      unlistenPromise.then((fn) => fn());
     };
   }, []);
 
@@ -227,12 +193,14 @@ function AppContent() {
       });
       showToast(`${instance.name} 启动成功 (PID: ${response})`, "success");
 
-      const newInstances = instances.map(i => 
-        i.id === instance.id ? { ...i, lastPlayed: Date.now() } : i
-      );
-      // 自动排序并保存
-      const sorted = newInstances.sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0));
-      handleUpdateInstances(sorted);
+      setInstances((prev) => {
+        const now = Date.now();
+        const sorted = prev.map((i) =>
+          i.id === instance.id ? { ...i, lastPlayed: now } : i
+        ).sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0));
+        invoke("save_instances", { data: JSON.stringify(sorted, null, 2) }).catch((e) => console.error(e));
+        return sorted;
+      });
     } catch (error) {
       console.error("启动异常:", error);
       showToast(`${error}`, "error");
