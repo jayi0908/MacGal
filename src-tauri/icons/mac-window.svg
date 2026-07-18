@@ -1,0 +1,14 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 窗口边框：透明填充 + 描边 -->
+  <rect x="56" y="56" width="400" height="400" rx="36" ry="36"
+        fill="none" stroke="#e2f6fc" stroke-width="16"/>
+
+  <!-- 标题栏分隔线（可选，轻微） -->
+  <line x1="56" y1="118" x2="456" y2="118"
+        stroke="#e2f6fc" stroke-width="5" opacity="0.25"/>
+
+  <!-- 左上角三个红黄绿交通灯 -->
+  <circle cx="100" cy="90" r="13" fill="#FF5F57"/>
+  <circle cx="140" cy="90" r="13" fill="#FEBC2E"/>
+  <circle cx="180" cy="90" r="13" fill="#28C840"/>
+</svg>

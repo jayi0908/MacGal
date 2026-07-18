@@ -563,7 +563,7 @@ export function InstancesPage({ instances, setInstances, onLaunch, settingsTarge
             </div>
             
             <div>
-              <label className="block text-sm font-medium mb-2">封面横幅 (Banner URL)</label>
+              <label className="block text-sm font-medium mb-2">封面链接 (Banner URL)</label>
               <div className="relative aspect-[21/9] w-full bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 overflow-hidden group">
                 {/* 兼容用户手动输入本地路径的情况 */}
                 {formData.backgroundImage ? (

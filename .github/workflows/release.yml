@@ -1,0 +1,194 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g.: v1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      TAG: ${{ steps.tag.outputs.TAG }}
+      IS_PRERELEASE: ${{ steps.prerelease.outputs.IS_PRERELEASE }}
+      RELEASE_BODY: ${{ steps.body.outputs.content }}
+    steps:
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag is $TAG"
+
+      - name: Determine pre-release
+        id: prerelease
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.TAG }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [ "${{ github.event.inputs.prerelease }}" == "true" ]; then
+              echo "IS_PRERELEASE=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "IS_PRERELEASE=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif [[ "$TAG" == *"alpha"* ]] || [[ "$TAG" == *"beta"* ]] || [[ "$TAG" == *"rc"* ]] || [[ "$TAG" == *"pre"* ]]; then
+            echo "IS_PRERELEASE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "IS_PRERELEASE=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Generate changelog for this release
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --current --strip header
+        env:
+          OUTPUT: changelog.gen.md
+
+      - name: Set release body
+        id: body
+        shell: bash
+        run: |
+          DELIM="CHANGELOG_$(openssl rand -hex 8)"
+          {
+            echo "content<<$DELIM"
+            cat changelog.gen.md
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update CHANGELOG.md (full history)
+        if: github.event_name == 'push'
+        uses: orhun/git-cliff-action@v4
+        continue-on-error: true
+        with:
+          config: cliff.toml
+          args: --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Commit CHANGELOG.md back to main
+        if: github.event_name == 'push'
+        continue-on-error: true
+        env:
+          TAG: ${{ steps.tag.outputs.TAG }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG.md for $TAG" || echo "no changes"
+          git push origin "HEAD:main"
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    needs: prepare
+    steps:
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag is $TAG"
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          shared-key: macos
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build aarch64 and upload to draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_INCREMENTAL: 0
+        with:
+          tagName: ${{ needs.prepare.outputs.TAG }}
+          releaseName: AsumiGal ${{ needs.prepare.outputs.TAG }}
+          releaseBody: ${{ needs.prepare.outputs.RELEASE_BODY }}
+          releaseDraft: true
+          prerelease: ${{ needs.prepare.outputs.IS_PRERELEASE == 'true' }}
+          includeRelease: true
+          tauriScript: pnpm tauri
+          args: --target aarch64-apple-darwin
+
+      - name: Build x86_64 and upload to draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_INCREMENTAL: 0
+        with:
+          tagName: ${{ needs.prepare.outputs.TAG }}
+          releaseName: AsumiGal ${{ needs.prepare.outputs.TAG }}
+          releaseBody: ${{ needs.prepare.outputs.RELEASE_BODY }}
+          releaseDraft: true
+          prerelease: ${{ needs.prepare.outputs.IS_PRERELEASE == 'true' }}
+          includeRelease: true
+          tauriScript: pnpm tauri
+          args: --target x86_64-apple-darwin
+
+  finalize-release:
+    name: Finalize Release
+    runs-on: ubuntu-latest
+    needs: [prepare, build-macos]
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ needs.prepare.outputs.TAG }}" --draft=false

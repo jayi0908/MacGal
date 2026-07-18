@@ -99,7 +99,7 @@ export function Layout({
       {/* 顶部导航 */}
       <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 w-max">
         <div className={navBarClass}>
-          <span className={clsx("font-bold text-lg mr-4 tracking-wider cursor-pointer", isDark?"text-blue-400":"text-indigo-600")} onClick={()=>setActiveTab('home')}>MacGal</span>
+          <span className={clsx("font-bold text-lg mr-4 tracking-wider cursor-pointer", isDark?"text-blue-400":"text-indigo-600")} onClick={()=>setActiveTab('home')}>AsumiGal</span>
           
           <NavBtn icon={<Play size={16} />} label="启动" active={activeTab === 'home'} onClick={() => setActiveTab('home')} isDark={isDark} />
           <NavBtn icon={<Box size={16} />} label="实例" active={activeTab === 'instances'} onClick={() => setActiveTab('instances')} isDark={isDark} />

@@ -267,7 +267,7 @@ function AppContent() {
             {/* {currentDisplayInstance?.name || */"Ciallo~ (∠・ω< )⌒★"}
           </h3>
           <p className="text-xl text-white/80 leading-relaxed max-w-lg drop-shadow-md">
-            {/* currentDisplayInstance?.info || */"欢迎使用 MacGal"}
+            {/* currentDisplayInstance?.info || */"欢迎回来，先輩"}
           </p>
         </div>
       )}

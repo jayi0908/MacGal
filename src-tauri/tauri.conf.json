@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MacGal",
+  "productName": "AsumiGal",
   "version": "0.3.0",
-  "identifier": "com.jayi0908.macgal",
+  "identifier": "com.jayi0908.asumigal",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "MacGal",
+        "title": "AsumiGal",
         "width": 960,
         "height": 600,
         "resizable": true,

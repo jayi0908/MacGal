@@ -537,7 +537,7 @@ pub async fn launch_game(app: AppHandle, instance_id: String, config: WineConfig
             let script_dir = app.path().resolve("scripts", tauri::path::BaseDirectory::AppLocalData).unwrap();
             let script_path = script_dir.join(format!("{}.sh", config.bottle_path));
             if script_path.exists() {
-                let log_path = "/tmp/macgal_script.log";
+                let log_path = "/tmp/asumigal_script.log";
                 let log_file = std::fs::File::create(log_path).unwrap();
                 match Command::new("sh")
                     .arg(&script_path)

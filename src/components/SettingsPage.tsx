@@ -371,27 +371,27 @@ export function SettingsPage() {
               <div className="flex items-start gap-6">
                 <img 
                     src="/app-icon.png" 
-                    alt="MacGal Logo" 
+                    alt="AsumiGal Logo" 
                     className="w-20 h-20 rounded-[1.2rem] shadow-xl shadow-indigo-500/20 object-cover"
                 />
                 
                 <div className="flex-1 space-y-2">
                    <div>
-                     <h2 className={clsx("text-4xl font-bold tracking-tight", isDark ? "text-white" : "text-gray-900")}>MacGal</h2>
+                     <h2 className={clsx("text-4xl font-bold tracking-tight", isDark ? "text-white" : "text-gray-900")}>AsumiGal</h2>
                      <p className={clsx("text-sm mt-1", isDark ? "text-white/50" : "text-gray-500")}>
                        Version 0.3.0
                      </p>
                    </div>
                    
                    <p className={clsx("leading-relaxed", isDark ? "text-white/80" : "text-gray-700")}>
-                     MacGal 是一款专为 macOS 设计的 galgame/视觉小说管理器，主要管理通过 CrossOver 运行的游戏实例，旨在补全 galgame 管理器在 macOS 平台的空白。
+                     AsumiGal 是一款专为 macOS 设计的 galgame/视觉小说管理器，主要管理通过 CrossOver 与 Parallels Desktop 运行的游戏实例，并兼容原生 macOS APP，旨在补全 galgame 管理器在 macOS 平台的空白。
                    </p>
 
                    <div className="pt-4 flex gap-3">
                       <button 
                         onClick={async () => {
                           // 使用 Shell 插件打开链接
-                          await openUrl("https://github.com/jayi0908/MacGal");
+                          await openUrl("https://github.com/jayi0908/AsumiGal");
                         }}
                         className={clsx(
                           "flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-medium",

@@ -1,62 +1,74 @@
-# MacGal
+<div align="center">
+  <div style="width:200px">
+    <a href="https://vndb.org/c87839">
+      <img src="src-tauri/icons/icon.ico" alt="asumi">
+    </a>
+  </div>
 
-> “你的家族有精神病史吗？
+<h1>AsumiGal</h1>
+
+<p align="center"><a href="./README.md">English</a> | <a href="./README.zh_CN.md">中文</a> | <a href="./README.ja_JP.md">日本語</a></p>
+
+![Status](https://img.shields.io/badge/status-active-brightgreen) ![Stage](https://img.shields.io/badge/stage-beta-blue) ![Build Status](https://github.com/jayi0908/AsumiGal/actions/workflows/build.yml/badge.svg) ![release](https://img.shields.io/github/v/release/jayi0908/AsumiGal?include_prereleases&sort=semver)
+
+</div>
+
+> - "Does your family have a history of mental illness?"
 >
-> 我有个叔叔买 mac 打游戏。”
+> - "My uncle bought a Mac to play games."
 
-MacGal 是一款专为 macOS 设计的 galgame/视觉小说管理器，主要管理通过 CrossOver 与 Parallels Desktop 运行的游戏实例，旨在补全 galgame 管理器在 macOS 平台的空白。
+AsumiGal is a galgame / visual novel manager designed for macOS. It primarily manages game instances running through CrossOver and Parallels Desktop, and is also compatible with native macOS apps, aiming to fill the gap of galgame managers on the macOS platform.
 
-目前更新至 0.3.0 版本，添加了 Parallels Desktop 与 macOS 原生 .app 启动实例的支持，并添加了实例的终止与迁移功能。
+The project is currently at version 0.3.0, which adds support for Parallels Desktop and native macOS `.app` launch instances, as well as instance termination and migration features.
 
-## 下载与安装
+## Download & Install
 
-### 从 Releases 下载
+### Download from Releases
 
-前往 [Releases](https://github.com/jayi0908/MacGal/releases) 页面下载最新版本的安装包。将程序拖拽入 Applications 之后需要在终端中运行如下命令绕过隔离：
+Go to the [Releases](https://github.com/jayi0908/AsumiGal/releases) page to download the latest installer. After dragging the app into Applications, run the following command in the terminal to bypass Gatekeeper quarantine:
 
 ```bash
-xattr -cr /Applications/MacGal.app
+xattr -cr /Applications/AsumiGal.app
 ```
 
-之后就能正常启动了。
+You should then be able to launch it normally.
 
-### 从源码编译
+### Build from source
 
 ```bash
-# 安装 xcode 命令行工具（如果尚未安装）
+# Install Xcode command line tools (if not already installed)
 xcode-select --install
 
-# 安装 Homebrew（如果尚未安装）
+# Install Homebrew (if not already installed)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# 安装 Rust 依赖
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh # 安装过程中 Enter 选择默认选项，安装后重启终端或运行 source $HOME/.cargo/env
+# Install Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh # Choose default options during install; after installation restart the terminal or run source $HOME/.cargo/env
 
-# 安装 node 和 pnpm
-# node 可以使用 Homebrew 安装，也可以使用 nvm 安装
+# Install node and pnpm
+# node can be installed via Homebrew or nvm
 brew install node pnpm
 
-# 克隆仓库
-git clone https://github.com/jayi0908/MacGal.git
-cd MacGal
-# 安装前端依赖
+# Clone the repository
+git clone https://github.com/jayi0908/AsumiGal.git
+cd AsumiGal
+# Install frontend dependencies
 pnpm install
 
-# 开发模式运行
+# Run in development mode
 pnpm tauri dev
 
-# 构建生产版本
+# Build the production version
 pnpm tauri build
 ```
 
-## 灵感来源 & 致谢
+## Inspiration & Acknowledgements
 
-- [touchgal](https://touchgal.top) 和 [kungal](https://kungal.com) - 提供了丰富的游戏数据
-- [ReinaManager](https://github.com/huoshen80/ReinaManager) 与 [LunaBox](https://github.com/Saramanda9988/LunaBox) - Windows 平台的轻量化的 galgame 和视觉小说管理工具（看到这个才想搞的 macOS 版本）
-- [Heroic](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher) - 跨平台的游戏启动器，使用 Tauri2 开发，并且支持 mac 端启动 CrossOver 容器内游戏
-- [SJMCL](https://github.com/UNIkeEN/SJMCL) - 跨平台的 Minecraft 启动器，同样使用 Tauri2 开发，借鉴了其布局
-- <s>[Gemini](https://gemini.google.com/) - 伟大的前后端开发者</s>
+- [touchgal](https://touchgal.top) and [kungal](https://kungal.com) - providing rich game data
+- [ReinaManager](https://github.com/huoshen80/ReinaManager) and [LunaBox](https://github.com/Saramanda9988/LunaBox) - lightweight galgame and visual novel managers on Windows (seeing these inspired the macOS version)
+- [Heroic](https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher) - a cross-platform game launcher built with Tauri2, which supports launching games inside CrossOver containers on macOS
+- [SJMCL](https://github.com/UNIkeEN/SJMCL) - a cross-platform Minecraft launcher also built with Tauri2, whose layout was referenced
 
 ## License
 
-本项目采用 [MIT](./LICENSE) 许可证。
+This project is licensed under the [MIT](./LICENSE) license.
