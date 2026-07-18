@@ -379,7 +379,7 @@ export function SettingsPage() {
                    <div>
                      <h2 className={clsx("text-4xl font-bold tracking-tight", isDark ? "text-white" : "text-gray-900")}>AsumiGal</h2>
                      <p className={clsx("text-sm mt-1", isDark ? "text-white/50" : "text-gray-500")}>
-                       Version 0.3.0
+                       Version 0.4.0
                      </p>
                    </div>
                    

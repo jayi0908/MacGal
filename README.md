@@ -19,7 +19,7 @@
 
 AsumiGal is a galgame / visual novel manager designed for macOS. It primarily manages game instances running through CrossOver and Parallels Desktop, and is also compatible with native macOS apps, aiming to fill the gap of galgame managers on the macOS platform.
 
-The project is currently at version 0.3.0, which adds support for Parallels Desktop and native macOS `.app` launch instances, as well as instance termination and migration features.
+The project is currently at version 0.4.0, which adds a dry run mode, renames the repository, and revises the project structure.
 
 ## Download & Install
 

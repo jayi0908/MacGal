@@ -1,8 +1,8 @@
 [package]
 name = "AsumiGal"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Tauri App"
-authors = ["you"]
+authors = ["jayi0908"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
