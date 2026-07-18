@@ -1,7 +1,11 @@
 
 
 
-## [unreleased](https://github.com/jayi0908/AsumiGal/compare/v0.3.0...HEAD)
+## [0.4.0](https://github.com/jayi0908/AsumiGal/compare/v0.3.0...v0.4.0) (2026-07-18)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release v0.4.0 ([721eef1](https://github.com/jayi0908/AsumiGal/commit/721eef169e21f11f095d2c0bcb3b45ede4cb197e))
 
 ### ✨ Features
 
@@ -10,6 +14,10 @@
 ### 🐛 Bug Fixes
 
 - 修复 dry run 时长错误记录的问题 ([5f3cdfe](https://github.com/jayi0908/AsumiGal/commit/5f3cdfe1333e75f466d2cd121254a5be8210be4c))
+
+### 🚜 Refactor
+
+- Rename project, update related docs and add github workflows ([1ec7704](https://github.com/jayi0908/AsumiGal/commit/1ec7704107ef8925445308f3532e972695021402))
 
 
 
